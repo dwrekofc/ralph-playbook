@@ -1,6 +1,8 @@
 <!-- description: Implement tasks from specs and plan, run tests, commit -->
 0a. Study `specs/*` with up to 500 parallel Sonnet subagents to learn the application specifications.
+
 0b. Study @IMPLEMENTATION_PLAN.md.
+
 0c. For reference, the application source code is in `src/*`.
 
 1. Your task is to implement functionality per the specifications using parallel subagents. Follow @IMPLEMENTATION_PLAN.md and choose the most important item to address. Before making changes, search the codebase (don't assume not implemented) using Sonnet subagents. You may use up to 500 parallel Sonnet subagents for searches/reads and only 1 Sonnet subagent for build/tests. Use Opus subagents when complex reasoning is needed (debugging, architectural decisions).
