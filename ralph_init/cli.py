@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import __version__
+
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 VARIANTS = ("js", "rust", "blank", "fork", "sap")
 
@@ -323,9 +325,9 @@ def main() -> None:
 
     print()
     if update_mode:
-        print(f"Done! Ralph ({variant}) files updated.")
+        print(f"Done! Ralph v{__version__} ({variant}) files updated.")
     else:
-        print(f"Done! Ralph ({variant}) is ready.")
+        print(f"Done! Ralph v{__version__} ({variant}) is ready.")
     print()
     print("Next steps:")
     print("  1. Run /ralph-reqs in Claude Code to brainstorm and define requirements")
@@ -384,7 +386,7 @@ def upgrade() -> None:
         print(f"Error: install.sh not found at {install_script}")
         sys.exit(1)
 
-    print(f"Upgrading ralph from {source_path}")
+    print(f"Upgrading ralph-init v{__version__} from {source_path}")
     print()
     result = subprocess.run(["bash", str(install_script)], cwd=source_path)
     sys.exit(result.returncode)

@@ -11,12 +11,15 @@ set -euo pipefail
 # Source location (where this script lives)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Read version from pyproject.toml
+VERSION=$(grep '^version' "${SCRIPT_DIR}/pyproject.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
 # Target location
 DEFAULT_RALPH_HOME="${HOME}/.ralph"
 RALPH_HOME="${RALPH_HOME:-${1:-$DEFAULT_RALPH_HOME}}"
 
-echo "Ralph Installer"
-echo "==============="
+echo "Ralph Installer v${VERSION}"
+echo "========================="
 echo "Source:  ${SCRIPT_DIR}"
 echo "Target:  ${RALPH_HOME}"
 echo ""
@@ -117,15 +120,20 @@ fi
 cat > "${RALPH_HOME}/.install-info" << EOF
 installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 source_path=${SCRIPT_DIR}
+version=${VERSION}
 mode=${MODE}
 EOF
 
 echo ""
-echo "Done!"
+if [[ "${MODE}" == "install" ]]; then
+    echo "Done! Ralph v${VERSION} installed."
+else
+    echo "Done! Ralph v${VERSION} updated."
+fi
 echo ""
 
 if [[ "${MODE}" == "install" ]]; then
-    echo "Ralph installed to ${RALPH_HOME}"
+    echo "Ralph v${VERSION} installed to ${RALPH_HOME}"
     echo ""
     echo "Quick start:"
     echo "  cd your-project"
@@ -133,7 +141,7 @@ if [[ "${MODE}" == "install" ]]; then
     echo ""
     echo "Run 'ralph-init' for full usage information."
 else
-    echo "Ralph updated from ${SCRIPT_DIR}"
+    echo "Ralph v${VERSION} updated from ${SCRIPT_DIR}"
 fi
 
 echo ""
