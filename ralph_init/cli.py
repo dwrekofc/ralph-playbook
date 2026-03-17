@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 VARIANTS = ("js", "rust", "blank", "fork", "sap")
 
 # Variants that reuse another variant's templates
@@ -80,7 +80,7 @@ WHAT IT DOES:
     git history, and GitHub repo are left untouched.
 
 ALL CONTENT LIVES IN EDITABLE .md FILES:
-    Templates are in the ralph fork at templates/<variant>/.
+    Templates are in the ralph fork at ralph_init/templates/<variant>/.
     Edit them in any text editor — no code changes needed.
 """
 
@@ -344,49 +344,3 @@ def main() -> None:
     print("  /ralph-build  — Run build mode (implement next task)")
 
 
-def upgrade() -> None:
-    """Re-run install.sh from the original source to upgrade ralph-init."""
-    ralph_home = Path(os.environ.get("RALPH_HOME", Path.home() / ".ralph"))
-    install_info = ralph_home / ".install-info"
-
-    if not install_info.exists():
-        print("Error: No installation info found.")
-        print(f"Expected: {install_info}")
-        print("Run install.sh manually first to create an initial installation.")
-        sys.exit(1)
-
-    # Parse the simple key=value file
-    info = {}
-    for line in install_info.read_text().splitlines():
-        if "=" in line:
-            key, value = line.split("=", 1)
-            info[key.strip()] = value.strip()
-
-    source_path = info.get("source_path")
-    if not source_path:
-        print("Error: source_path not found in .install-info")
-        sys.exit(1)
-
-    # Check if the volume/drive is mounted
-    source = Path(source_path)
-    if source_path.startswith("/Volumes/"):
-        volume_name = Path(*source.parts[:3])  # e.g. /Volumes/CORE
-        if not volume_name.exists():
-            print(f"Error: Drive not found — {volume_name}")
-            print(f"Connect the drive and try again.")
-            sys.exit(1)
-
-    if not source.exists():
-        print(f"Error: Source directory not found at {source_path}")
-        print("Connect the drive or check that the path still exists.")
-        sys.exit(1)
-
-    install_script = source / "install.sh"
-    if not install_script.exists():
-        print(f"Error: install.sh not found at {install_script}")
-        sys.exit(1)
-
-    print(f"Upgrading ralph-init v{__version__} from {source_path}")
-    print()
-    result = subprocess.run(["bash", str(install_script)], cwd=source_path)
-    sys.exit(result.returncode)

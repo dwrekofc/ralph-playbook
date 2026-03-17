@@ -1,12 +1,14 @@
 [project]
 name = "ralph-init"
-version = "0.2.0"
+version = "0.3.0"
 description = "Bootstrap projects with the Ralph Playbook methodology"
 requires-python = ">=3.10"
 
 [project.scripts]
 ralph-init = "ralph_init.cli:main"
-ralph-upgrade = "ralph_init.cli:upgrade"
+
+[tool.setuptools.package-data]
+ralph_init = ["templates/**/*"]
 
 [build-system]
 requires = ["setuptools>=69.0"]
