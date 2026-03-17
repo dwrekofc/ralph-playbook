@@ -51,7 +51,7 @@ Rules for the draft outline:
 - Each topic MUST include a `Source:` line mapping it to the JTBD(s) it traces to
 - "Key reqs" are 3-5 truncated bullet points (just enough to confirm scope, not full requirements)
 - Order topics by dependency (foundational topics first)
-- If the reqs have locked decisions, constraints, or design principles that apply to ALL topics, note them once under a header called `CROSS-CUTTING CONSTRAINTS` at the top
+- If the reqs have locked decisions, constraints, or design principles that apply to ALL topics, note them under a header called `CROSS-CUTTING CONSTRAINTS` at the top of the outline. In Phase 3, these constraints must be duplicated into the Constraints section of EVERY spec they apply to — each spec must be fully self-contained.
 
 7. **Validate coverage before presenting.** Before showing the outline to the user, verify: (a) every JTBD in the reqs has at least one corresponding topic, (b) no single topic covers more than one JTBD unless it is genuinely atomic. If a JTBD has no topic, add one. If a topic maps to multiple JTBDs, evaluate whether it should be split.
 
@@ -105,7 +105,7 @@ Rules for writing specs:
 - **Requirements describe WHAT, not HOW.** "Support light and dark themes" not "Create a HashMap<String, Theme>."
 - **One spec per topic.** Don't split a topic across files or combine topics into one file.
 - **Specs don't describe ordering or phases.** That's the implementation plan's job. Specs describe the end state.
-- **Cross-cutting constraints** that apply to ALL specs should get their own spec file (e.g., `specs/design-principles.md`) rather than being repeated in every file.
+- **Cross-cutting constraints** that apply to multiple specs must be included in EVERY spec they apply to. Each spec must be fully self-contained — readable in isolation without referencing other spec files. Duplication is intentional.
 - **Keep specs scannable.** Ralph reads them every loop iteration. Dense prose wastes context. Bullets > paragraphs.
 
 After writing all spec files, print a summary:

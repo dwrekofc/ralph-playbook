@@ -16,7 +16,7 @@
    - Identify **Topics of Concern** from the reqs — distinct areas of the system that can each be described in one sentence WITHOUT using the word "and." If you need "and," it's two topics.
    - For each topic, create `specs/<topic-name>.md` using the template below. Use short, lowercase-hyphenated topic names.
    - Extract requirements from the reqs document. Every requirement should trace back to the reqs. If you infer something not explicitly stated, mark it with `[inferred]`.
-   - Cross-cutting constraints that apply to ALL specs should get their own spec file (e.g., `specs/design-principles.md`).
+   - Cross-cutting constraints that apply to multiple specs must be duplicated into EVERY spec they apply to. Each spec must be fully self-contained — readable in complete isolation without referencing other spec files.
 
    **B. If specs already exist (no source code)** — refine them:
    - Compare specs against the reqs document. Fill gaps in requirements and acceptance criteria.
@@ -34,8 +34,8 @@
    - Verify every spec has all required sections: Purpose, Requirements, Constraints, Acceptance Criteria, References.
    - Check that requirements use imperative voice and are specific enough to verify against code.
    - Check for topic overlap — if two specs claim the same concern, consolidate into one.
-   - Ensure cross-cutting constraints have their own spec file rather than being duplicated across specs.
-   - Remove duplicate requirements that appear in multiple specs (keep in the most relevant spec).
+   - Ensure cross-cutting constraints are present in EVERY spec they apply to. Each spec must be self-contained — a reader should never need to consult another spec to understand this one.
+   - Cross-cutting requirements SHOULD appear in multiple specs. Do not deduplicate them — duplication is intentional so each spec stands alone.
    - Where something is ambiguous and cannot be resolved from the reqs or decisions docs, mark it with `[needs-clarification]` and move on — do NOT block.
 
 3. After all spec changes are complete: `git add specs/` then `git commit` with a message summarizing what specs were created or refined, then `git push`.
