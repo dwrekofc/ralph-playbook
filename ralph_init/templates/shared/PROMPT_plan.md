@@ -9,6 +9,8 @@
 
 0e. **When sources conflict, precedence is: reqs > specs > code. Specs must conform to reqs. Code mismatches are flagged, not resolved — the build loop handles implementation.**
 
+0f. Do NOT read `.planning/roadmap-*.md` files. These are deferred ideas outside the current scope.
+
 
 1. Study @IMPLEMENTATION_PLAN.md (if present; it may be incorrect) and use up to 500 Sonnet subagents to study existing source code in `src/*` and compare it against `specs/*`. Use an Opus subagent to analyze findings, prioritize tasks, and create/update @IMPLEMENTATION_PLAN.md as a bullet point list sorted in priority of items yet to be implemented. Ultrathink. Consider searching for TODO, minimal implementations, placeholders, skipped/flaky tests, and inconsistent patterns. Study @IMPLEMENTATION_PLAN.md to determine starting point for research and keep it up to date with items considered complete/incomplete using subagents.
 

@@ -1,5 +1,5 @@
 <!-- description: Autonomous spec refinement — convert and refine specs from requirements -->
-0a. Find the OLDEST active requirements file in `.planning/`. Use a glob to list all `reqs-*.md` files in `.planning/` (NOT `.planning/archive/`), sort them, and read the one with the smallest increment number (e.g., `reqs-001.md` before `reqs-002.md`). Do NOT read from `.planning/archive/`. Do NOT read from `docs/` or any other location. If no `reqs-*.md` file exists in `.planning/`, stop and commit a note to `IMPLEMENTATION_PLAN.md` explaining that no requirements were found.
+0a. Find the OLDEST active requirements file in `.planning/`. Use a glob to list all `reqs-*.md` files in `.planning/` (NOT `.planning/archive/`), sort them, and read the one with the smallest increment number (e.g., `reqs-001.md` before `reqs-002.md`). Do NOT read from `.planning/archive/`. Do NOT read `.planning/roadmap-*.md`. Do NOT read from `docs/` or any other location. If no `reqs-*.md` file exists in `.planning/`, stop and commit a note to `IMPLEMENTATION_PLAN.md` explaining that no requirements were found.
 
 0b. Check if a matching `decisions-*.md` file exists in `.planning/` (same increment number as the reqs file). If it exists, read it with a subagent. Do NOT read archived decisions.
 
@@ -108,3 +108,4 @@ Optional. Pointers to reference implementations, related specs, or planning doc 
 999999999999. This prompt runs AUTONOMOUSLY in a headless loop. Do NOT use AskUserQuestion or any interactive tools. Do NOT stop and wait for user input. Complete the full cycle (orient → refine → quality pass → commit) every iteration.
 9999999999999. Prefer conservative refinement over aggressive restructuring. Small improvements each iteration compound. Do not reorganize all specs in a single pass — focus on the highest-value refinements first.
 99999999999999. The number of spec files must ALWAYS be greater than or equal to the number of JTBDs in the requirements. If you have fewer specs than JTBDs, you must split specs until this invariant holds. Each spec should target a single, focused unit of work implementable in one build loop iteration.
+999999999999999. Do NOT read or reference `.planning/roadmap-*.md` files. These contain deferred ideas that are explicitly out of scope for spec creation.

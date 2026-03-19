@@ -12,7 +12,7 @@ Ralph's planning loop (`PROMPT_plan.md`) reads every file in `specs/*` and compa
 
 ### PHASE 1: Read Requirements & Resolve Questions
 
-1. Find the OLDEST active requirements file in `.planning/`. List all `reqs-*.md` files in `.planning/` (NOT `.planning/archive/`), sort them, and read the one with the smallest increment number (e.g., `reqs-001.md` before `reqs-002.md`). Also read the matching `decisions-*.md` if it exists (same increment number). **Do NOT read from `.planning/archive/`.** Do NOT read `docs/` or any other location — the active reqs file is the single source of truth.
+1. Find the OLDEST active requirements file in `.planning/`. List all `reqs-*.md` files in `.planning/` (NOT `.planning/archive/`), sort them, and read the one with the smallest increment number (e.g., `reqs-001.md` before `reqs-002.md`). Also read the matching `decisions-*.md` if it exists (same increment number). **Do NOT read from `.planning/archive/`.** Do NOT read `.planning/roadmap-*.md` — roadmap files are deferred ideas, not actionable requirements. Do NOT read `docs/` or any other location — the active reqs file is the single source of truth.
 
 2. Identify **outstanding questions, ambiguities, or gaps** in the requirements. These might be:
    - Requirements that are vague or underspecified
