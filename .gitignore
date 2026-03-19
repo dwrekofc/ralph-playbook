@@ -1,2 +1,7 @@
 /.DS_Store
 docs/.DS_Store
+
+# Build artifacts
+build/
+*.egg-info/
+__pycache__/
