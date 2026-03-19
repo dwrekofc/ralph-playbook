@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""ralph-init: Bootstrap projects with the Ralph Playbook methodology."""
+"""ralph: AI development framework scaffolding and management."""
 
-import argparse
+import json
 import os
 import shutil
 import stat
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
@@ -23,91 +24,277 @@ GITHUB_CONFIGS = {
     "sap":     {"host": "github.tools.sap", "owner": "I852000", "private": True},
 }
 
-HELP_TEXT = """\
-ralph-init — Bootstrap the current directory with the Ralph Playbook methodology.
+VARIANT_DIRS = {
+    "js": ("specs", "src", "src/lib", ".planning"),
+    "rust": ("specs", "crates", "apps", ".planning"),
+    "blank": ("specs", "src", "src/lib", ".planning"),
+    "fork": ("specs", ".planning"),
+    "sap": ("specs", "src", "src/lib", ".planning"),
+}
 
-USAGE:
-    ralph-init <variant> [options]
+REGISTRY_DIR = Path.home() / ".ralph"
+REGISTRY_FILE = REGISTRY_DIR / "registry.json"
+PROJECT_CONFIG = ".ralph.json"
 
-VARIANTS:
-    js        JS/TS stack: Bun runtime, TypeScript, shadcn/ui, Tailwind CSS
-    rust      Rust/GPUI stack: Cargo, GPUI (Zed), clippy, nextest
-    blank     Bare Ralph setup: empty AGENTS.md template, no stack assumptions
-    fork      Private fork: alias for blank --no-git --no-gh
-    sap       SAP JS/TS stack: Same as js, pushes to github.tools.sap (SAP GH Enterprise)
+HELP_TEXT = f"""\
+ralph v{__version__} — AI development framework scaffolding and management.
 
-OPTIONS:
-    --desc    Project goal — replaces [project-specific goal] in PROMPT_plan.md
-    --update  Update an existing repo with latest Ralph files (skips git init,
-              directory creation, and GitHub repo creation)
-    --no-git  Skip all git operations (init + commit). Implies --no-gh.
-    --no-gh   Skip GitHub repo creation + push (git init + commit still happen)
-    --private Create a private GitHub repo instead of public
+COMMANDS:
+  ralph init <variant> [options]    Initialize current directory as a ralph project
+  ralph update [options]            Update current project with latest ralph files
+  ralph list                        List all registered ralph projects
+  ralph sync                        Update ALL registered projects with latest ralph files
 
-SMART DEFAULTS:
-    If .git/ already exists, git init is skipped (Ralph files are still committed).
-    If an 'origin' remote already exists, GitHub repo creation is skipped.
-    Use --no-git or --no-gh to override these behaviors entirely.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-EXAMPLES:
-    cd my-web-app
-    ralph-init js --desc "A recipe sharing web app"
+RALPH INIT
 
-    cd my-desktop-app
-    ralph-init rust --desc "A system monitor with GPUI"
+  Scaffolds the current directory with ralph methodology files and registers
+  the project in the central registry (~/.ralph/registry.json).
 
-    cd my-project
-    ralph-init blank
+  Usage: ralph init <variant> [--desc "goal"] [--no-git] [--no-gh] [--private]
 
-    cd my-private-project
-    ralph-init fork --desc "A private local-only project"
+  Variants (required, exactly one):
+    js        JS/TS stack — Bun, TypeScript, shadcn/ui, Tailwind CSS
+    rust      Rust/GPUI stack — Cargo, GPUI (Zed), clippy, nextest
+    blank     Bare ralph — empty AGENTS.md, no stack assumptions
+    fork      Local-only — same as blank, no git init, no GitHub repo
+    sap       SAP JS/TS — same as js, pushes to github.tools.sap (SAP GH Enterprise)
 
-    cd my-sap-app
-    ralph-init sap --desc "An SAP Fiori companion tool"
+  Options:
+    --desc "text"   Project goal string. Replaces [project-specific goal] in PROMPT_plan.md.
+                    Optional. Can be added later by editing PROMPT_plan.md directly.
+    --no-git        Skip git init and git commit. No .git directory created.
+                    Implies --no-gh (can't push without git).
+    --no-gh         Skip GitHub repo creation. Git is still initialized locally.
+                    Automatic if 'origin' remote already exists.
+    --private       Create a private GitHub repo (default is public).
+                    SAP variant is always private regardless of this flag.
 
-    # Update an existing ralph project with latest files
-    cd my-existing-project
-    ralph-init rust --update
+  What it does (in order):
+    1. Copies shared ralph files: loop.sh, format-stream.sh, all PROMPT_*.md, IMPLEMENTATION_PLAN.md
+    2. Builds .gitignore from shared base + variant-specific ignores
+    3. Copies variant-specific files (AGENTS.md, config files). {{{{PROJECT_NAME}}}} is replaced with directory name.
+    4. Replaces [project-specific goal] in PROMPT_plan.md if --desc provided
+    5. Creates CLAUDE.md symlink -> AGENTS.md
+    6. Installs .claude/commands/ slash commands (ralph-reqs, ralph-spec, ralph-manage, etc.)
+    7. Creates project directories (specs/, src/, .planning/, etc. — varies by variant)
+    8. Writes .ralph.json to project root (variant, timestamp, version)
+    9. Registers project in ~/.ralph/registry.json
+    10. Initializes git repo + initial commit (unless --no-git)
+    11. Creates GitHub repo + pushes (unless --no-gh or fork variant)
 
-    # Initialize in an existing git repo without creating a GitHub repo
-    cd my-existing-repo
-    ralph-init js --no-gh --desc "Already have a repo"
+  Smart defaults:
+    - If .git/ already exists: skips git init, still commits new files
+    - If 'origin' remote exists: skips GitHub repo creation
+    - fork variant: forces --no-git --no-gh automatically
 
-    # Initialize with no git at all (files only)
-    ralph-init blank --no-git
+  Exit codes:
+    0  Success
+    1  Unknown variant, missing SAP credentials, or other error
 
-    # Create a private GitHub repo instead of public
-    ralph-init js --private --desc "A private project"
+  Examples:
+    ralph init js --desc "A recipe sharing web app"
+    ralph init rust --desc "A system monitor with GPUI"
+    ralph init blank
+    ralph init fork --desc "A private local-only experiment"
+    ralph init sap --desc "An SAP Fiori companion tool"
+    ralph init js --no-gh --private
 
-WHAT IT DOES:
-    1. Copies Ralph files into the current directory:
-       loop.sh, format-stream.sh, all PROMPT_*.md prompts, IMPLEMENTATION_PLAN.md
-    2. Copies variant-specific files (AGENTS.md, config files, etc.)
-    3. Installs .claude/commands/ with slash commands:
-       /ralph-reqs, /ralph-spec, /ralph-plan, /ralph-build
-    4. Creates CLAUDE.md symlink -> AGENTS.md
-    5. Creates project directories (specs/, src/ or crates/, etc.)
-    6. Initializes git repo with initial commit (skip with --no-git)
-    7. Creates GitHub repo and pushes (skip with --no-gh or --no-git):
-       - js/rust/blank: public repo on github.com (dwrekofc/<dir-name>)
-       - sap: private repo on github.tools.sap (I852000/<dir-name>)
-       - Use --private to make any variant's repo private
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    With --update, only steps 1-4 are performed. Existing project directories,
-    git history, and GitHub repo are left untouched.
+RALPH UPDATE
 
-ALL CONTENT LIVES IN EDITABLE .md FILES:
-    Templates are in the ralph fork at ralph_init/templates/<variant>/.
-    Edit them in any text editor — no code changes needed.
+  Updates the current project with the latest ralph files from the installed
+  version. Reads .ralph.json to auto-detect the variant — no variant argument needed.
+
+  Usage: ralph update [--desc "goal"] [--variant <variant>]
+
+  Options:
+    --desc "text"       Update the project goal in PROMPT_plan.md.
+    --variant <variant> Override or set the variant. Required only for projects
+                        initialized before v0.4.0 that lack .ralph.json.
+                        Valid values: js, rust, blank, fork, sap.
+
+  What it does (in order):
+    1. Reads .ralph.json from current directory to determine variant
+    2. Copies shared ralph files (same as init step 1)
+    3. Rebuilds .gitignore (same as init step 2)
+    4. Copies variant-specific files (same as init step 3)
+    5. Replaces project goal if --desc provided (same as init step 4)
+    6. Recreates CLAUDE.md symlink (same as init step 5)
+    7. Updates .claude/commands/ slash commands (same as init step 6)
+    8. Updates .ralph.json with last_updated_at and current ralph version
+    9. Updates registry entry in ~/.ralph/registry.json
+
+  What it does NOT do:
+    - Does NOT create directories (specs/, src/, etc.)
+    - Does NOT touch git history or make commits
+    - Does NOT create or modify GitHub repos
+
+  Edge cases:
+    - No .ralph.json found + no --variant flag: exits with error and message:
+      "No .ralph.json found. This project may predate v0.4.0.
+       Run: ralph update --variant <variant> to set it."
+    - No .ralph.json found + --variant provided: creates .ralph.json, registers
+      project, then runs update. One-time migration to the new system.
+    - .ralph.json exists + --variant provided: updates the stored variant and
+      applies that variant's files.
+
+  Exit codes:
+    0  Success
+    1  No .ralph.json and no --variant provided, or unknown variant
+
+  Examples:
+    ralph update                        # auto-detects variant from .ralph.json
+    ralph update --desc "Updated goal"  # also update project goal
+    ralph update --variant js           # migrate pre-0.4.0 project
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RALPH LIST
+
+  Prints all projects registered in ~/.ralph/registry.json.
+
+  Usage: ralph list
+
+  Output format (one line per project):
+    <variant>  <ralph_version>  <last_updated>  <path>
+
+  If a registered path no longer exists on disk, it is marked with [missing].
+  No options or flags.
+
+  Exit codes:
+    0  Success (even if registry is empty or has missing paths)
+
+  Examples:
+    ralph list
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RALPH SYNC
+
+  Updates ALL registered projects with the latest ralph files. Equivalent to
+  running `ralph update` in every project directory listed in the registry.
+  Run this after `brew upgrade ralph` to propagate changes everywhere.
+
+  Usage: ralph sync
+
+  What it does:
+    1. Loads ~/.ralph/registry.json
+    2. For each registered project:
+       a. Checks path exists on disk (warns and skips if not)
+       b. Checks .ralph.json exists (warns and skips if not)
+       c. Changes to project directory and runs update logic
+       d. Prints status: "Updated: <path> (<variant>)"
+    3. Prints summary: "Updated N/M projects. S skipped."
+
+  Edge cases:
+    - Registry file missing: prints "No projects registered. Run ralph init first."
+    - Path doesn't exist: prints "Skipped (not found): <path>" and continues
+    - .ralph.json missing in project: prints "Skipped (no .ralph.json): <path>" and continues
+    - All projects are skipped: exits 0 with summary showing 0 updated
+
+  Exit codes:
+    0  Always (individual project failures are warnings, not fatal)
+
+  Examples:
+    ralph sync
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILES:
+  .ralph.json              Per-project config (variant, timestamps, version). Created by ralph init.
+                           Located in the project root. Added to .gitignore automatically.
+  ~/.ralph/registry.json   Central registry of all ralph projects. Created automatically.
+
+WORKFLOW:
+  ralph init js --desc "goal"   ->  scaffold new project
+  ralph update                  ->  update current project after brew upgrade
+  ralph list                    ->  see all ralph projects
+  ralph sync                    ->  update every project after brew upgrade
 """
 
+
+# ─── Registry helpers ───────────────────────────────────────────────
+
+def load_registry() -> dict:
+    """Load the central registry. Returns empty structure if missing."""
+    if REGISTRY_FILE.exists():
+        return json.loads(REGISTRY_FILE.read_text())
+    return {"projects": []}
+
+
+def save_registry(registry: dict) -> None:
+    """Save the central registry, creating ~/.ralph/ if needed."""
+    REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    REGISTRY_FILE.write_text(json.dumps(registry, indent=2) + "\n")
+
+
+def register_project(path: str, variant: str) -> None:
+    """Add or update a project entry in the registry."""
+    registry = load_registry()
+    now = datetime.now(timezone.utc).isoformat()
+    abs_path = str(Path(path).resolve())
+
+    # Find existing entry by path
+    for project in registry["projects"]:
+        if project["path"] == abs_path:
+            project["variant"] = variant
+            project["last_updated_at"] = now
+            project["ralph_version"] = __version__
+            save_registry(registry)
+            return
+
+    # New entry
+    registry["projects"].append({
+        "path": abs_path,
+        "variant": variant,
+        "initialized_at": now,
+        "last_updated_at": now,
+        "ralph_version": __version__,
+    })
+    save_registry(registry)
+
+
+# ─── Project config helpers ─────────────────────────────────────────
+
+def read_project_config(dest: Path) -> dict | None:
+    """Read .ralph.json from a project directory. Returns None if missing."""
+    config_path = dest / PROJECT_CONFIG
+    if config_path.exists():
+        return json.loads(config_path.read_text())
+    return None
+
+
+def write_project_config(dest: Path, variant: str, is_init: bool = False) -> None:
+    """Write or update .ralph.json in the project directory."""
+    config_path = dest / PROJECT_CONFIG
+    now = datetime.now(timezone.utc).isoformat()
+
+    if config_path.exists() and not is_init:
+        config = json.loads(config_path.read_text())
+        config["variant"] = variant
+        config["last_updated_at"] = now
+        config["ralph_version"] = __version__
+    else:
+        config = {
+            "variant": variant,
+            "initialized_at": now,
+            "ralph_version": __version__,
+        }
+
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
+
+
+# ─── File operations (unchanged from original) ─────────────────────
 
 def check_sap_credentials() -> None:
     """Verify SAP SSH key and gh CLI auth before scaffolding."""
     ssh_key = Path.home() / ".ssh" / "id_ed25519_sap"
     if not ssh_key.exists():
         print("Error: SAP SSH key not found at ~/.ssh/id_ed25519_sap")
-        print("Set up your SAP SSH key before running ralph-init sap.")
+        print("Set up your SAP SSH key before running ralph init sap.")
         sys.exit(1)
 
     result = subprocess.run(
@@ -211,15 +398,6 @@ def create_symlink(dest: Path) -> None:
     link.symlink_to("AGENTS.md")
 
 
-VARIANT_DIRS = {
-    "js": ("specs", "src", "src/lib", ".planning"),
-    "rust": ("specs", "crates", "apps", ".planning"),
-    "blank": ("specs", "src", "src/lib", ".planning"),
-    "fork": ("specs", ".planning"),
-    "sap": ("specs", "src", "src/lib", ".planning"),
-}
-
-
 def create_dirs(dest: Path, variant: str) -> None:
     """Create standard project directories for the given variant."""
     for d in VARIANT_DIRS.get(variant, ("specs", "src")):
@@ -231,7 +409,7 @@ def git_init(dest: Path, variant: str) -> None:
     subprocess.run(["git", "init"], cwd=dest, check=True, capture_output=True)
     subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-m", f"init: ralph-init {variant}"],
+        ["git", "commit", "-m", f"init: ralph {variant}"],
         cwd=dest,
         check=True,
         capture_output=True,
@@ -273,31 +451,58 @@ def has_git_remote(dest: Path, remote: str = "origin") -> bool:
     return result.returncode == 0
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="ralph-init",
-        description="Bootstrap projects with the Ralph Playbook methodology.",
-        add_help=False,
-    )
+# ─── Shared update logic ───────────────────────────────────────────
+
+def run_update(dest: Path, variant: str, desc: str | None = None) -> None:
+    """Run the update steps (shared between update and sync)."""
+    project_name = dest.name
+
+    print("  Copying shared Ralph files...")
+    copy_shared_files(dest)
+
+    print("  Building .gitignore...")
+    build_gitignore(dest, variant)
+
+    print(f"  Copying {variant} variant files...")
+    copy_variant_files(dest, variant, project_name)
+
+    if desc:
+        print("  Setting project goal in PROMPT_plan.md...")
+        replace_project_goal(dest, desc)
+
+    print("  Creating CLAUDE.md -> AGENTS.md symlink...")
+    create_symlink(dest)
+
+    print("  Updating .ralph.json...")
+    write_project_config(dest, variant)
+
+    print("  Updating registry...")
+    register_project(str(dest), variant)
+
+
+# ─── Subcommands ────────────────────────────────────────────────────
+
+def cmd_init(args: list[str]) -> None:
+    """Handle: ralph init <variant> [options]"""
+    import argparse
+    parser = argparse.ArgumentParser(prog="ralph init", add_help=False)
     parser.add_argument("variant", nargs="?", default=None)
-    parser.add_argument("--desc", default=None, help="Project goal description")
-    parser.add_argument("--update", action="store_true", help="Update existing repo with latest Ralph files")
-    parser.add_argument("--no-git", action="store_true", dest="no_git", help="Skip all git operations (implies --no-gh)")
-    parser.add_argument("--no-gh", action="store_true", dest="no_gh", help="Skip GitHub repo creation + push")
-    parser.add_argument("--private", action="store_true", help="Create a private GitHub repo")
-    parser.add_argument("-h", "--help", action="store_true")
+    parser.add_argument("--desc", default=None)
+    parser.add_argument("--no-git", action="store_true", dest="no_git")
+    parser.add_argument("--no-gh", action="store_true", dest="no_gh")
+    parser.add_argument("--private", action="store_true")
+    parsed = parser.parse_args(args)
 
-    args = parser.parse_args()
+    if parsed.variant is None:
+        print("Error: variant is required.")
+        print(f"Valid variants: {', '.join(VARIANTS)}")
+        print("\nRun 'ralph --help' for full usage.")
+        sys.exit(1)
 
-    # Show help if no variant or help requested
-    if args.help or args.variant is None or args.variant == "help":
-        print(HELP_TEXT)
-        sys.exit(0)
-
-    variant = args.variant
+    variant = parsed.variant
     if variant not in VARIANTS:
         print(f"Error: unknown variant '{variant}'. Choose from: {', '.join(VARIANTS)}")
-        print(f"\nRun 'ralph-init' for help.")
+        print("\nRun 'ralph --help' for full usage.")
         sys.exit(1)
 
     # Pre-flight credential check for SAP
@@ -306,78 +511,73 @@ def main() -> None:
 
     dest = Path.cwd()
     project_name = dest.name
-    update_mode = args.update
-    no_git = args.no_git
-    no_gh = args.no_gh or no_git  # --no-git implies --no-gh
+    no_git = parsed.no_git
+    no_gh = parsed.no_gh or no_git  # --no-git implies --no-gh
 
     # fork variant is an alias for blank --no-git --no-gh
     if variant == "fork":
         no_git = True
         no_gh = True
 
-    if update_mode:
-        print(f"Updating Ralph ({variant}) in {dest}")
-    else:
-        print(f"Initializing Ralph ({variant}) in {dest}")
+    print(f"Initializing Ralph ({variant}) in {dest}")
     print(f"Project name: {project_name}")
     print()
 
-    # 1. Copy shared files
+    # Steps 1-6: shared file operations
     print("  Copying shared Ralph files...")
     copy_shared_files(dest)
 
-    # 2. Build .gitignore
     print("  Building .gitignore...")
     build_gitignore(dest, variant)
 
-    # 3. Copy variant files
     print(f"  Copying {variant} variant files...")
     copy_variant_files(dest, variant, project_name)
 
-    # 4. Replace project goal if --desc provided
-    if args.desc:
-        print(f"  Setting project goal in PROMPT_plan.md...")
-        replace_project_goal(dest, args.desc)
+    if parsed.desc:
+        print("  Setting project goal in PROMPT_plan.md...")
+        replace_project_goal(dest, parsed.desc)
 
-    # 5. Create CLAUDE.md symlink
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
     create_symlink(dest)
 
-    if not update_mode:
-        # 6. Create directories
-        dirs = VARIANT_DIRS.get(variant, ("specs", "src"))
-        print(f"  Creating {', '.join(d + '/' for d in dirs)}...")
-        create_dirs(dest, variant)
+    # Step 7: Create directories
+    dirs = VARIANT_DIRS.get(variant, ("specs", "src"))
+    print(f"  Creating {', '.join(d + '/' for d in dirs)}...")
+    create_dirs(dest, variant)
 
-        # 7. Git init + commit
-        if no_git:
-            print("  Skipping git (--no-git)...")
-        elif (dest / ".git").is_dir():
-            print("  Git repo detected — committing Ralph files...")
-            subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
-            subprocess.run(
-                ["git", "commit", "-m", f"init: ralph-init {variant}"],
-                cwd=dest, check=True, capture_output=True,
-            )
-        else:
-            print("  Initializing git repo...")
-            git_init(dest, variant)
+    # Step 8-9: Write project config + register
+    print("  Writing .ralph.json...")
+    write_project_config(dest, variant, is_init=True)
 
-        # 8. GitHub repo creation
-        if no_gh:
-            print("  Skipping GitHub repo creation...")
-        elif has_git_remote(dest):
-            print("  Remote 'origin' detected — skipping GitHub repo creation...")
-        else:
-            gh_config = GITHUB_CONFIGS.get(variant, GITHUB_CONFIGS["default"])
-            print(f"  Creating GitHub repo {gh_config['owner']}/{project_name} on {gh_config['host']}...")
-            github_create(dest, project_name, variant, private_override=args.private)
+    print("  Registering project...")
+    register_project(str(dest), variant)
+
+    # Step 10: Git init + commit
+    if no_git:
+        print("  Skipping git (--no-git)...")
+    elif (dest / ".git").is_dir():
+        print("  Git repo detected — committing Ralph files...")
+        subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"init: ralph {variant}"],
+            cwd=dest, check=True, capture_output=True,
+        )
+    else:
+        print("  Initializing git repo...")
+        git_init(dest, variant)
+
+    # Step 11: GitHub repo creation
+    if no_gh:
+        print("  Skipping GitHub repo creation...")
+    elif has_git_remote(dest):
+        print("  Remote 'origin' detected — skipping GitHub repo creation...")
+    else:
+        gh_config = GITHUB_CONFIGS.get(variant, GITHUB_CONFIGS["default"])
+        print(f"  Creating GitHub repo {gh_config['owner']}/{project_name} on {gh_config['host']}...")
+        github_create(dest, project_name, variant, private_override=parsed.private)
 
     print()
-    if update_mode:
-        print(f"Done! Ralph v{__version__} ({variant}) files updated.")
-    else:
-        print(f"Done! Ralph v{__version__} ({variant}) is ready.")
+    print(f"Done! Ralph v{__version__} ({variant}) is ready.")
     print()
     print("Next steps:")
     print("  1. Run /ralph-reqs in Claude Code to brainstorm and define requirements")
@@ -388,9 +588,132 @@ def main() -> None:
     print("  5. Run: ./loop.sh help        (list all available loop modes)")
     print()
     print("Slash commands installed in .claude/commands/:")
-    print("  /ralph-reqs   — Interactive requirements gathering & ideation")
-    print("  /ralph-spec   — Convert planning docs into Ralph specs")
-    print("  /ralph-plan   — Run planning mode (gap analysis)")
-    print("  /ralph-build  — Run build mode (implement next task)")
+    print("  /ralph-reqs    — Interactive requirements gathering & ideation")
+    print("  /ralph-spec    — Convert planning docs into Ralph specs")
+    print("  /ralph-manage  — Guided setup wizard (init, update, sync)")
 
 
+def cmd_update(args: list[str]) -> None:
+    """Handle: ralph update [options]"""
+    import argparse
+    parser = argparse.ArgumentParser(prog="ralph update", add_help=False)
+    parser.add_argument("--desc", default=None)
+    parser.add_argument("--variant", default=None)
+    parsed = parser.parse_args(args)
+
+    dest = Path.cwd()
+    config = read_project_config(dest)
+
+    if config is None and parsed.variant is None:
+        print("Error: No .ralph.json found. This project may predate v0.4.0.")
+        print(f"Run: ralph update --variant <variant> to set it.")
+        print(f"Valid variants: {', '.join(VARIANTS)}")
+        sys.exit(1)
+
+    if parsed.variant:
+        if parsed.variant not in VARIANTS:
+            print(f"Error: unknown variant '{parsed.variant}'. Choose from: {', '.join(VARIANTS)}")
+            sys.exit(1)
+        variant = parsed.variant
+    else:
+        variant = config["variant"]
+
+    print(f"Updating Ralph ({variant}) in {dest}")
+    print()
+
+    run_update(dest, variant, desc=parsed.desc)
+
+    print()
+    print(f"Done! Ralph v{__version__} ({variant}) files updated.")
+
+
+def cmd_list(args: list[str]) -> None:
+    """Handle: ralph list"""
+    registry = load_registry()
+
+    if not registry["projects"]:
+        print("No projects registered. Run 'ralph init' first.")
+        return
+
+    for project in registry["projects"]:
+        path = project["path"]
+        variant = project.get("variant", "?")
+        version = project.get("ralph_version", "?")
+        updated = project.get("last_updated_at", project.get("initialized_at", "?"))
+        # Truncate ISO timestamp to date
+        if updated and "T" in updated:
+            updated = updated.split("T")[0]
+
+        exists = Path(path).is_dir()
+        marker = "" if exists else " [missing]"
+        print(f"  {variant:<8} {version:<8} {updated:<12} {path}{marker}")
+
+
+def cmd_sync(args: list[str]) -> None:
+    """Handle: ralph sync"""
+    registry = load_registry()
+
+    if not registry["projects"]:
+        print("No projects registered. Run 'ralph init' first.")
+        return
+
+    total = len(registry["projects"])
+    updated = 0
+    skipped = 0
+
+    for project in registry["projects"]:
+        path = Path(project["path"])
+
+        if not path.is_dir():
+            print(f"Skipped (not found): {path}")
+            skipped += 1
+            continue
+
+        config = read_project_config(path)
+        if config is None:
+            print(f"Skipped (no .ralph.json): {path}")
+            skipped += 1
+            continue
+
+        variant = config["variant"]
+        print(f"\n--- {path} ---")
+
+        # Save and restore cwd
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(path)
+            run_update(path, variant)
+            updated += 1
+            print(f"Updated: {path} ({variant})")
+        except Exception as e:
+            print(f"Error updating {path}: {e}")
+            skipped += 1
+        finally:
+            os.chdir(original_cwd)
+
+    print(f"\nUpdated {updated}/{total} projects. {skipped} skipped.")
+
+
+# ─── Main dispatch ──────────────────────────────────────────────────
+
+def main() -> None:
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print(HELP_TEXT)
+        sys.exit(0)
+
+    command = sys.argv[1]
+    rest = sys.argv[2:]
+
+    if command == "init":
+        cmd_init(rest)
+    elif command == "update":
+        cmd_update(rest)
+    elif command == "list":
+        cmd_list(rest)
+    elif command == "sync":
+        cmd_sync(rest)
+    else:
+        print(f"Error: unknown command '{command}'.")
+        print("Valid commands: init, update, list, sync")
+        print("\nRun 'ralph --help' for full usage.")
+        sys.exit(1)

@@ -1,11 +1,11 @@
 [project]
-name = "ralph-init"
-version = "0.3.1"
-description = "Bootstrap projects with the Ralph Playbook methodology"
+name = "ralph"
+version = "0.4.0"
+description = "AI development framework scaffolding and management"
 requires-python = ">=3.10"
 
 [project.scripts]
-ralph-init = "ralph_init.cli:main"
+ralph = "ralph_init.cli:main"
 
 [tool.setuptools.package-data]
 ralph_init = ["templates/**/*"]

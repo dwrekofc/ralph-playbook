@@ -17,3 +17,4 @@ Thumbs.db
 # Ralph
 # (keep loop.sh, prompts, and plans in git)
 logs/
+.ralph.json
