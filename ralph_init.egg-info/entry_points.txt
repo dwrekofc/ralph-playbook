@@ -1,0 +1,2 @@
+[console_scripts]
+ralph-init = ralph_init.cli:main
