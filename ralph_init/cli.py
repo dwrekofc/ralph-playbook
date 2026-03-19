@@ -728,6 +728,13 @@ def main() -> None:
     command = sys.argv[1]
     rest = sys.argv[2:]
 
+    # Auto-install global commands on any mutating command
+    if command in ("init", "update", "sync", "install-commands"):
+        try:
+            cmd_install_commands([])
+        except Exception:
+            pass  # Don't fail the main command if global install fails
+
     if command == "init":
         cmd_init(rest)
     elif command == "update":
@@ -737,7 +744,7 @@ def main() -> None:
     elif command == "sync":
         cmd_sync(rest)
     elif command == "install-commands":
-        cmd_install_commands(rest)
+        pass  # Already ran above
     else:
         print(f"Error: unknown command '{command}'.")
         print("Valid commands: init, update, list, sync, install-commands")
