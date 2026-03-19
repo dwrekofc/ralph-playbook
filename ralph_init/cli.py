@@ -694,6 +694,30 @@ def cmd_sync(args: list[str]) -> None:
     print(f"\nUpdated {updated}/{total} projects. {skipped} skipped.")
 
 
+GLOBAL_COMMANDS = ["ralph-manage.md"]
+
+
+def cmd_install_commands(args: list[str]) -> None:
+    """Install global Claude Code slash commands to ~/.claude/commands/."""
+    dest = Path.home() / ".claude" / "commands"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    commands_src = TEMPLATES_DIR / "shared" / "claude-commands"
+    installed = []
+
+    for name in GLOBAL_COMMANDS:
+        src = commands_src / name
+        if src.exists():
+            shutil.copy2(src, dest / name)
+            installed.append(name)
+
+    if installed:
+        for name in installed:
+            print(f"  Installed: ~/.claude/commands/{name}")
+    else:
+        print("  No global commands to install.")
+
+
 # ─── Main dispatch ──────────────────────────────────────────────────
 
 def main() -> None:
@@ -712,8 +736,10 @@ def main() -> None:
         cmd_list(rest)
     elif command == "sync":
         cmd_sync(rest)
+    elif command == "install-commands":
+        cmd_install_commands(rest)
     else:
         print(f"Error: unknown command '{command}'.")
-        print("Valid commands: init, update, list, sync")
+        print("Valid commands: init, update, list, sync, install-commands")
         print("\nRun 'ralph --help' for full usage.")
         sys.exit(1)
