@@ -27,20 +27,27 @@ HELP_TEXT = """\
 ralph-init — Bootstrap the current directory with the Ralph Playbook methodology.
 
 USAGE:
-    ralph-init <variant> [--desc "project goal"]
-    ralph-init <variant> --update [--desc "project goal"]
+    ralph-init <variant> [options]
 
 VARIANTS:
     js        JS/TS stack: Bun runtime, TypeScript, shadcn/ui, Tailwind CSS
     rust      Rust/GPUI stack: Cargo, GPUI (Zed), clippy, nextest
     blank     Bare Ralph setup: empty AGENTS.md template, no stack assumptions
-    fork      Private fork: same as blank, local git only (no GitHub repo)
+    fork      Private fork: alias for blank --no-git --no-gh
     sap       SAP JS/TS stack: Same as js, pushes to github.tools.sap (SAP GH Enterprise)
 
 OPTIONS:
     --desc    Project goal — replaces [project-specific goal] in PROMPT_plan.md
     --update  Update an existing repo with latest Ralph files (skips git init,
               directory creation, and GitHub repo creation)
+    --no-git  Skip all git operations (init + commit). Implies --no-gh.
+    --no-gh   Skip GitHub repo creation + push (git init + commit still happen)
+    --private Create a private GitHub repo instead of public
+
+SMART DEFAULTS:
+    If .git/ already exists, git init is skipped (Ralph files are still committed).
+    If an 'origin' remote already exists, GitHub repo creation is skipped.
+    Use --no-git or --no-gh to override these behaviors entirely.
 
 EXAMPLES:
     cd my-web-app
@@ -62,6 +69,16 @@ EXAMPLES:
     cd my-existing-project
     ralph-init rust --update
 
+    # Initialize in an existing git repo without creating a GitHub repo
+    cd my-existing-repo
+    ralph-init js --no-gh --desc "Already have a repo"
+
+    # Initialize with no git at all (files only)
+    ralph-init blank --no-git
+
+    # Create a private GitHub repo instead of public
+    ralph-init js --private --desc "A private project"
+
 WHAT IT DOES:
     1. Copies Ralph files into the current directory:
        loop.sh, format-stream.sh, all PROMPT_*.md prompts, IMPLEMENTATION_PLAN.md
@@ -70,11 +87,11 @@ WHAT IT DOES:
        /ralph-reqs, /ralph-spec, /ralph-plan, /ralph-build
     4. Creates CLAUDE.md symlink -> AGENTS.md
     5. Creates project directories (specs/, src/ or crates/, etc.)
-    6. Initializes git repo with initial commit
-    7. Creates GitHub repo and pushes (unless variant is 'fork'):
+    6. Initializes git repo with initial commit (skip with --no-git)
+    7. Creates GitHub repo and pushes (skip with --no-gh or --no-git):
        - js/rust/blank: public repo on github.com (dwrekofc/<dir-name>)
        - sap: private repo on github.tools.sap (I852000/<dir-name>)
-       - fork: local git only, no GitHub repo
+       - Use --private to make any variant's repo private
 
     With --update, only steps 1-4 are performed. Existing project directories,
     git history, and GitHub repo are left untouched.
@@ -221,11 +238,12 @@ def git_init(dest: Path, variant: str) -> None:
     )
 
 
-def github_create(dest: Path, project_name: str, variant: str) -> None:
+def github_create(dest: Path, project_name: str, variant: str, private_override: bool = False) -> None:
     """Create GitHub repo and push."""
     config = GITHUB_CONFIGS.get(variant, GITHUB_CONFIGS["default"])
     repo_name = f"{config['owner']}/{project_name}"
-    visibility = "--private" if config["private"] else "--public"
+    is_private = private_override or config["private"]
+    visibility = "--private" if is_private else "--public"
 
     env = os.environ.copy()
     if config["host"] != "github.com":
@@ -245,6 +263,16 @@ def github_create(dest: Path, project_name: str, variant: str) -> None:
     )
 
 
+def has_git_remote(dest: Path, remote: str = "origin") -> bool:
+    """Check if a git remote exists."""
+    result = subprocess.run(
+        ["git", "remote", "get-url", remote],
+        cwd=dest,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ralph-init",
@@ -254,6 +282,9 @@ def main() -> None:
     parser.add_argument("variant", nargs="?", default=None)
     parser.add_argument("--desc", default=None, help="Project goal description")
     parser.add_argument("--update", action="store_true", help="Update existing repo with latest Ralph files")
+    parser.add_argument("--no-git", action="store_true", dest="no_git", help="Skip all git operations (implies --no-gh)")
+    parser.add_argument("--no-gh", action="store_true", dest="no_gh", help="Skip GitHub repo creation + push")
+    parser.add_argument("--private", action="store_true", help="Create a private GitHub repo")
     parser.add_argument("-h", "--help", action="store_true")
 
     args = parser.parse_args()
@@ -276,6 +307,13 @@ def main() -> None:
     dest = Path.cwd()
     project_name = dest.name
     update_mode = args.update
+    no_git = args.no_git
+    no_gh = args.no_gh or no_git  # --no-git implies --no-gh
+
+    # fork variant is an alias for blank --no-git --no-gh
+    if variant == "fork":
+        no_git = True
+        no_gh = True
 
     if update_mode:
         print(f"Updating Ralph ({variant}) in {dest}")
@@ -312,16 +350,28 @@ def main() -> None:
         create_dirs(dest, variant)
 
         # 7. Git init + commit
-        print("  Initializing git repo...")
-        git_init(dest, variant)
+        if no_git:
+            print("  Skipping git (--no-git)...")
+        elif (dest / ".git").is_dir():
+            print("  Git repo detected — committing Ralph files...")
+            subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", f"init: ralph-init {variant}"],
+                cwd=dest, check=True, capture_output=True,
+            )
+        else:
+            print("  Initializing git repo...")
+            git_init(dest, variant)
 
-        # 8. GitHub repo creation (skip for fork variant)
-        if variant == "fork":
-            print("  Skipping GitHub repo (local-only fork)...")
+        # 8. GitHub repo creation
+        if no_gh:
+            print("  Skipping GitHub repo creation...")
+        elif has_git_remote(dest):
+            print("  Remote 'origin' detected — skipping GitHub repo creation...")
         else:
             gh_config = GITHUB_CONFIGS.get(variant, GITHUB_CONFIGS["default"])
             print(f"  Creating GitHub repo {gh_config['owner']}/{project_name} on {gh_config['host']}...")
-            github_create(dest, project_name, variant)
+            github_create(dest, project_name, variant, private_override=args.private)
 
     print()
     if update_mode:
