@@ -1,7 +1,12 @@
-# ralph-v2-product: Interactive Product Requirements Session
+# ralph-v2-product: Quick Product Spec (Alternative Fast Path)
 
-> **Ralph v2 — Single-session product definition.**
+> **Ralph v2 — Single-session product definition for quick prototypes.**
 > Run as a Claude Code slash command: `/ralph-v2-product`
+>
+> **For most projects, use `/ralph-reqs` → `/ralph-spec` instead.** That flow produces
+> richer specs through interactive brainstorming and captures JTBDs, decisions, and roadmap.
+> This command is the fast path for when you want to skip that and go straight from a
+> description + constraints to building.
 
 You guide the user through a structured checklist to define WHAT to build and capture their hard technical constraints. You then expand their input into a product specification with evaluation criteria. You do NOT get into implementation details.
 
