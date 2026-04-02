@@ -739,7 +739,10 @@ RALPH_MARKERS = ("loop.sh", "PROMPT_build.md", "AGENTS.md")
 
 def is_ralph_project(path: Path) -> bool:
     """Detect if a directory is a Ralph project by checking for key markers."""
-    return all((path / m).exists() for m in RALPH_MARKERS)
+    try:
+        return all((path / m).exists() for m in RALPH_MARKERS)
+    except (PermissionError, OSError):
+        return False
 
 
 def detect_variant(path: Path) -> str:
@@ -775,7 +778,14 @@ def discover_ralph_projects(search_paths: list[Path], max_depth: int = 4) -> lis
             # Skip hidden dirs, node_modules, .git, templates, refs
             if current.name.startswith(".") and depth > 0:
                 continue
-            if current.name in ("node_modules", "templates", "files", "refs", "__pycache__"):
+            skip_names = {
+                "node_modules", "templates", "files", "refs", "__pycache__",
+                "Library", "Caches", "Applications", "System", "Pictures",
+                "Music", "Movies", "Photos", "Downloads", ".Trash",
+                "site-packages", "venv", ".venv", "target", "build", "dist",
+                "sitesucker", "archvie", "resources", "_dark-refs_",
+            }
+            if current.name in skip_names:
                 continue
             resolved = str(current.resolve())
             if resolved == ralph_src:
