@@ -788,11 +788,14 @@ def discover_ralph_projects(search_paths: list[Path], max_depth: int = 4) -> lis
 
             try:
                 children = sorted(current.iterdir())
-            except PermissionError:
+            except (PermissionError, OSError):
                 continue
             for child in children:
-                if child.is_dir() and not child.is_symlink():
-                    queue.append((child, depth + 1))
+                try:
+                    if child.is_dir() and not child.is_symlink():
+                        queue.append((child, depth + 1))
+                except (PermissionError, OSError):
+                    continue
 
     return found
 
