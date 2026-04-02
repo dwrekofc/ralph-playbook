@@ -44,6 +44,8 @@ COMMANDS:
   ralph update [options]            Update current project with latest ralph files
   ralph list                        List all registered ralph projects
   ralph sync                        Update ALL registered projects with latest ralph files
+  ralph discover [paths...]         Find unregistered Ralph projects on disk
+  ralph discover --register         Find, register, and update all discovered projects
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -730,6 +732,144 @@ def cmd_sync(args: list[str]) -> None:
     print(f"\nUpdated {updated}/{total} projects. {skipped} skipped.")
 
 
+# ─── Discovery ─────────────────────────────────────────────────────
+
+RALPH_MARKERS = ("loop.sh", "PROMPT_build.md", "AGENTS.md")
+
+
+def is_ralph_project(path: Path) -> bool:
+    """Detect if a directory is a Ralph project by checking for key markers."""
+    return all((path / m).exists() for m in RALPH_MARKERS)
+
+
+def detect_variant(path: Path) -> str:
+    """Infer a project's Ralph variant from its files."""
+    config = read_project_config(path)
+    if config and "variant" in config:
+        return config["variant"]
+    if (path / "Cargo.toml").exists() or (path / "crates").is_dir():
+        return "rust"
+    if (path / "package.json").exists() or (path / "tsconfig.json").exists():
+        return "js"
+    return "blank"
+
+
+def discover_ralph_projects(search_paths: list[Path], max_depth: int = 4) -> list[tuple[Path, str]]:
+    """Walk directories up to max_depth looking for Ralph projects.
+    Returns list of (path, variant) tuples for projects NOT already registered."""
+    registry = load_registry()
+    registered = {p["path"] for p in registry["projects"]}
+    # Also exclude the ralph source repo itself
+    ralph_src = str(TEMPLATES_DIR.resolve().parent.parent)
+
+    found = []
+    for base in search_paths:
+        if not base.is_dir():
+            continue
+        # BFS with depth limit
+        queue = [(base, 0)]
+        while queue:
+            current, depth = queue.pop(0)
+            if depth > max_depth:
+                continue
+            # Skip hidden dirs, node_modules, .git, templates, refs
+            if current.name.startswith(".") and depth > 0:
+                continue
+            if current.name in ("node_modules", "templates", "files", "refs", "__pycache__"):
+                continue
+            resolved = str(current.resolve())
+            if resolved == ralph_src:
+                continue
+
+            if is_ralph_project(current) and resolved not in registered:
+                variant = detect_variant(current)
+                found.append((current.resolve(), variant))
+                continue  # Don't recurse into ralph projects
+
+            try:
+                children = sorted(current.iterdir())
+            except PermissionError:
+                continue
+            for child in children:
+                if child.is_dir() and not child.is_symlink():
+                    queue.append((child, depth + 1))
+
+    return found
+
+
+def cmd_discover(args: list[str]) -> None:
+    """Handle: ralph discover [paths...]"""
+    import argparse
+    parser = argparse.ArgumentParser(prog="ralph discover", add_help=False)
+    parser.add_argument("paths", nargs="*", default=None)
+    parser.add_argument("--register", action="store_true",
+                        help="Register and update discovered projects")
+    parser.add_argument("--depth", type=int, default=4,
+                        help="Max directory depth to search (default: 4)")
+    parsed = parser.parse_args(args)
+
+    # Default search paths
+    if parsed.paths:
+        search_paths = [Path(p).expanduser().resolve() for p in parsed.paths]
+    else:
+        search_paths = [
+            Path.home(),
+            Path("/Volumes"),
+        ]
+
+    print(f"Searching for Ralph projects (depth={parsed.depth})...")
+    for sp in search_paths:
+        print(f"  {sp}")
+    print()
+
+    found = discover_ralph_projects(search_paths, max_depth=parsed.depth)
+
+    if not found:
+        print("No unregistered Ralph projects found.")
+        return
+
+    print(f"Found {len(found)} unregistered Ralph project(s):\n")
+    for path, variant in found:
+        has_config = (path / ".ralph.json").exists()
+        status = "" if has_config else " (no .ralph.json — will be created)"
+        print(f"  {variant:<8} {path}{status}")
+
+    if not parsed.register:
+        print(f"\nTo register and update these projects, run:")
+        print(f"  ralph discover --register")
+        if parsed.paths:
+            print(f"    (with same paths: {' '.join(parsed.paths)})")
+        return
+
+    # Register and update
+    print(f"\nRegistering and updating {len(found)} project(s)...\n")
+    updated = 0
+    failed = 0
+    original_cwd = Path.cwd()
+
+    for path, variant in found:
+        print(f"--- {path} ---")
+        try:
+            os.chdir(path)
+
+            # Write .ralph.json if missing
+            if not (path / ".ralph.json").exists():
+                print(f"  Creating .ralph.json (variant={variant})...")
+                write_project_config(path, variant, is_init=True)
+
+            # Run update
+            run_update(path, variant)
+            updated += 1
+            print(f"  Registered + updated: {path} ({variant})")
+        except Exception as e:
+            print(f"  Error: {e}")
+            failed += 1
+        finally:
+            os.chdir(original_cwd)
+
+    print(f"\nDone! Registered {updated}/{len(found)} projects. {failed} failed.")
+
+
 GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
 
 
@@ -765,7 +905,7 @@ def main() -> None:
     rest = sys.argv[2:]
 
     # Auto-install global commands on any mutating command
-    if command in ("init", "update", "sync", "install-commands"):
+    if command in ("init", "update", "sync", "discover", "install-commands"):
         try:
             cmd_install_commands([])
         except Exception:
@@ -779,10 +919,12 @@ def main() -> None:
         cmd_list(rest)
     elif command == "sync":
         cmd_sync(rest)
+    elif command == "discover":
+        cmd_discover(rest)
     elif command == "install-commands":
         pass  # Already ran above
     else:
         print(f"Error: unknown command '{command}'.")
-        print("Valid commands: init, update, list, sync, install-commands")
+        print("Valid commands: init, update, list, sync, discover, install-commands")
         print("\nRun 'ralph --help' for full usage.")
         sys.exit(1)
