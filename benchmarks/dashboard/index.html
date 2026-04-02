@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ralph v2 Benchmark Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --dim: #8b949e; --blue: #58a6ff; --green: #3fb950; --red: #f85149; --purple: #bc8cff; --orange: #d29922; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: var(--dim); margin-bottom: 24px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .tab { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--dim); cursor: pointer; font-size: 14px; }
+  .tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card h3 { font-size: 14px; color: var(--dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); color: var(--dim); font-weight: 500; }
+  td { padding: 8px; border-bottom: 1px solid var(--border); }
+  .pass { color: var(--green); }
+  .fail { color: var(--red); }
+  .score { font-size: 24px; font-weight: 600; }
+  canvas { max-height: 250px; }
+  .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 40px; text-align: center; color: var(--dim); margin-bottom: 24px; cursor: pointer; transition: border-color 0.2s; }
+  .drop-zone:hover, .drop-zone.active { border-color: var(--blue); }
+  .drop-zone input { display: none; }
+  .empty { text-align: center; padding: 60px; color: var(--dim); }
+  .metric { display: flex; justify-content: space-between; padding: 4px 0; }
+  .metric-label { color: var(--dim); }
+  @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Ralph v2 Benchmark Dashboard</h1>
+<p class="subtitle">Compare eval strategies across test projects</p>
+
+<div class="drop-zone" id="dropZone">
+  <p>Drop benchmark JSON files here or <strong>click to browse</strong></p>
+  <p style="margin-top:8px; font-size:12px;">Files from benchmarks/results/*.json</p>
+  <input type="file" id="fileInput" accept=".json" multiple>
+</div>
+
+<div class="tabs" id="projectTabs"></div>
+
+<div id="dashboard" class="empty">
+  <p>No benchmark data loaded yet.<br>Drop JSON files above or load from benchmarks/results/</p>
+</div>
+
+<script>
+let allResults = [];
+let currentProject = 'all';
+
+const STRATEGY_COLORS = { prompt: '#58a6ff', codex: '#bc8cff', teams: '#3fb950' };
+const STRATEGY_LABELS = { prompt: 'Eval Prompt', codex: 'Codex Review', teams: 'Agent Teams' };
+
+// ─── File loading ──────────────────────────────────────────────────
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('active'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('active');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(files) {
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = JSON.parse(e.target.result);
+        // Avoid duplicates
+        const key = `${data.project}_${data.strategy}_${data.timestamp}`;
+        if (!allResults.find(r => `${r.project}_${r.strategy}_${r.timestamp}` === key)) {
+          allResults.push(data);
+        }
+        render();
+      } catch (err) {
+        console.error('Invalid JSON:', err);
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+// Try loading from relative path (works when served, not file://)
+fetch('../results/')
+  .then(r => r.text())
+  .then(html => {
+    const matches = html.match(/href="([^"]+\.json)"/g) || [];
+    return Promise.all(matches.map(m => {
+      const file = m.match(/href="([^"]+)"/)[1];
+      return fetch(`../results/${file}`).then(r => r.json());
+    }));
+  })
+  .then(results => { allResults = results; render(); })
+  .catch(() => {}); // Expected to fail on file://
+
+// ─── Rendering ─────────────────────────────────────────────────────
+
+let charts = {};
+
+function render() {
+  if (allResults.length === 0) return;
+
+  // Build project tabs
+  const projects = [...new Set(allResults.map(r => r.project))];
+  const tabsEl = document.getElementById('projectTabs');
+  tabsEl.innerHTML = `<div class="tab ${currentProject === 'all' ? 'active' : ''}" onclick="setProject('all')">All</div>` +
+    projects.map(p => `<div class="tab ${currentProject === p ? 'active' : ''}" onclick="setProject('${p}')">${p}</div>`).join('');
+
+  // Filter results
+  const filtered = currentProject === 'all' ? allResults : allResults.filter(r => r.project === currentProject);
+
+  // Group by strategy (use latest run per strategy per project)
+  const byStrategy = {};
+  filtered.forEach(r => {
+    const key = `${r.project}_${r.strategy}`;
+    if (!byStrategy[key] || r.timestamp > byStrategy[key].timestamp) {
+      byStrategy[key] = r;
+    }
+  });
+  const latest = Object.values(byStrategy);
+
+  const dashboard = document.getElementById('dashboard');
+  dashboard.className = '';
+  dashboard.innerHTML = `
+    <div class="grid">
+      <div class="card">
+        <h3>Strategy Comparison</h3>
+        <table>
+          <thead><tr><th>Strategy</th><th>Pass Rate</th><th>Time</th><th>LOC</th><th>Tests</th><th>User Score</th></tr></thead>
+          <tbody id="compTable"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Pass Rate by Strategy</h3>
+        <canvas id="passChart"></canvas>
+      </div>
+      <div class="card">
+        <h3>Duration by Strategy</h3>
+        <canvas id="timeChart"></canvas>
+      </div>
+      <div class="card">
+        <h3>Cost vs Quality</h3>
+        <canvas id="scatterChart"></canvas>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:24px">
+      <h3>All Runs</h3>
+      <table>
+        <thead><tr><th>Project</th><th>Strategy</th><th>Timestamp</th><th>Pass Rate</th><th>Duration</th><th>LOC</th><th>Tests</th><th>Cost</th><th>User Score</th><th>Bugs (eval)</th><th>Bugs (user)</th></tr></thead>
+        <tbody id="allTable"></tbody>
+      </table>
+    </div>
+  `;
+
+  // Comparison table (aggregated by strategy)
+  const stratAgg = {};
+  latest.forEach(r => {
+    if (!stratAgg[r.strategy]) stratAgg[r.strategy] = { pass: [], time: [], loc: [], tests: [], scores: [] };
+    stratAgg[r.strategy].pass.push(r.pass_rate || 0);
+    stratAgg[r.strategy].time.push(r.duration_seconds || 0);
+    stratAgg[r.strategy].loc.push(r.loc || 0);
+    stratAgg[r.strategy].tests.push(r.test_count || 0);
+    if (r.user_score) stratAgg[r.strategy].scores.push(r.user_score);
+  });
+
+  const avg = arr => arr.length ? (arr.reduce((a,b) => a+b, 0) / arr.length).toFixed(1) : '—';
+  const fmt_time = s => s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`;
+
+  document.getElementById('compTable').innerHTML = Object.entries(stratAgg).map(([s, d]) => `
+    <tr>
+      <td><span style="color:${STRATEGY_COLORS[s]}">${STRATEGY_LABELS[s] || s}</span></td>
+      <td class="${avg(d.pass) >= 80 ? 'pass' : avg(d.pass) >= 50 ? '' : 'fail'}">${avg(d.pass)}%</td>
+      <td>${fmt_time(Math.round(avg(d.time)))}</td>
+      <td>${avg(d.loc)}</td>
+      <td>${avg(d.tests)}</td>
+      <td>${avg(d.scores)}</td>
+    </tr>
+  `).join('');
+
+  // All runs table
+  document.getElementById('allTable').innerHTML = allResults
+    .filter(r => currentProject === 'all' || r.project === currentProject)
+    .sort((a,b) => b.timestamp.localeCompare(a.timestamp))
+    .map(r => `
+      <tr>
+        <td>${r.project}</td>
+        <td><span style="color:${STRATEGY_COLORS[r.strategy]}">${r.strategy}</span></td>
+        <td style="color:var(--dim)">${r.timestamp?.split('T')[0] || '—'}</td>
+        <td class="${(r.pass_rate||0) >= 80 ? 'pass' : (r.pass_rate||0) >= 50 ? '' : 'fail'}">${r.pass_rate || 0}%</td>
+        <td>${fmt_time(r.duration_seconds || 0)}</td>
+        <td>${r.loc || 0}</td>
+        <td>${r.test_count || 0}</td>
+        <td>${r.cost_usd != null ? '$' + r.cost_usd : '—'}</td>
+        <td>${r.user_score != null ? r.user_score + '/10' : '—'}</td>
+        <td>${r.bugs_eval_found != null ? r.bugs_eval_found : '—'}</td>
+        <td>${r.bugs_user_found != null ? r.bugs_user_found : '—'}</td>
+      </tr>
+    `).join('');
+
+  // Charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const strategies = [...new Set(latest.map(r => r.strategy))];
+  const chartOpts = { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#30363d' }, ticks: { color: '#8b949e' } }, x: { grid: { color: '#30363d' }, ticks: { color: '#8b949e' } } } };
+
+  charts.pass = new Chart(document.getElementById('passChart'), {
+    type: 'bar',
+    data: { labels: strategies.map(s => STRATEGY_LABELS[s] || s), datasets: [{ data: strategies.map(s => avg(stratAgg[s]?.pass || [0])), backgroundColor: strategies.map(s => STRATEGY_COLORS[s]) }] },
+    options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: ctx => ctx.raw + '%' } } } }
+  });
+
+  charts.time = new Chart(document.getElementById('timeChart'), {
+    type: 'bar',
+    data: { labels: strategies.map(s => STRATEGY_LABELS[s] || s), datasets: [{ data: strategies.map(s => Math.round(avg(stratAgg[s]?.time || [0]))), backgroundColor: strategies.map(s => STRATEGY_COLORS[s]) }] },
+    options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: ctx => fmt_time(ctx.raw) } } } }
+  });
+
+  // Scatter: cost vs user score
+  const scatterData = latest.filter(r => r.cost_usd != null && r.user_score != null).map(r => ({
+    x: r.cost_usd, y: r.user_score, label: `${r.project} (${r.strategy})`
+  }));
+  charts.scatter = new Chart(document.getElementById('scatterChart'), {
+    type: 'scatter',
+    data: {
+      datasets: strategies.map(s => ({
+        label: STRATEGY_LABELS[s] || s,
+        data: scatterData.filter(d => d.label.includes(s)),
+        backgroundColor: STRATEGY_COLORS[s],
+        pointRadius: 8
+      }))
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b949e' } }, tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: $${ctx.raw.x} / ${ctx.raw.y}/10` } } },
+      scales: { x: { title: { display: true, text: 'Cost ($)', color: '#8b949e' }, grid: { color: '#30363d' }, ticks: { color: '#8b949e' } }, y: { title: { display: true, text: 'User Score (1-10)', color: '#8b949e' }, grid: { color: '#30363d' }, ticks: { color: '#8b949e' }, min: 0, max: 10 } }
+    }
+  });
+}
+
+function setProject(p) {
+  currentProject = p;
+  render();
+}
+</script>
+
+</body>
+</html>

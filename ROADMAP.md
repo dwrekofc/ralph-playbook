@@ -122,3 +122,54 @@ I also want this current working dir to have it's own .claude/ folder and a CLAU
 
 ## JTBD 9: update PROMPT_spec.md & reqs workflow ✅ Done
 when I run the PROMPT_spec.md prompt I want it to only look for active reqs.md & decisions.md docs in the .planning/ folder and not look for anything else. don't instruct it to read all docs, just the oldest reqs/decisions docs with the smallest increment. there may be multiple (reqs001, reqs002, etc.) and it should only look for the oldest one with the smallest increment. the prompt should explicitly state NOT to look in the archive folder.
+
+---
+
+# Ralph v2 Beta
+
+Parallel evolution motivated by Anthropic's harness design findings: product-level planning beats micro-specs, separate evaluator agents improve quality, back-pressure keeps agents on track.
+
+## JTBD 10: v2 Product-Level Planning ⏳ Beta
+**When** I start a new project, **I want** to define product requirements and hard constraints in a single interactive session, **so that** the AI builds what I asked for without micro-detailed implementation plans.
+
+### User Stories
+- As a developer, I want `/ralph-v2-product` to walk me through a structured checklist (tech stack, DB, auth, deployment) and generate PRODUCT_SPEC.md + CONSTRAINTS.md.
+- As a developer, I want the product spec to contain features, user stories, success criteria, and eval rubrics — NOT implementation details.
+- As a developer, I want the agent to expand my input faithfully — no scope inflation, no bonus features.
+
+---
+
+## JTBD 11: Adversarial Evaluation System ⏳ Beta
+**When** the generator builds features, **I want** a separate evaluator agent to test and grade the implementation, **so that** I get honest quality assessment instead of self-praise.
+
+### User Stories
+- As a developer, I want 3 eval strategies I can benchmark: dedicated eval prompt, Codex cross-review, and Claude Code agent teams.
+- As a developer, I want `./v2-loop.sh auto N` to alternate between build and eval cycles with configurable pass thresholds.
+- As a developer, I want `./v2-loop.sh auto N --eval=codex` to use Codex (GPT-5.4) as the evaluator for true model separation.
+- As a developer, I want a ralph-v2-team skill that orchestrates generator + evaluator as Claude Code agent teammates.
+
+---
+
+## JTBD 12: Back-Pressure Scaffolding ⏳ Beta
+**When** the loop runs, **I want** automated build/lint/test/typecheck checks after every feature, **so that** the agent catches and fixes issues immediately instead of accumulating tech debt.
+
+### User Stories
+- As a developer, I want back-pressure commands auto-generated per tech stack (JS: eslint+vitest+tsc, Rust: clippy+cargo test+cargo fmt, etc.).
+- As a developer, I want the generator to enforce TDD: write tests first (red), implement (green), refactor.
+- As a developer, I want the enhanced blank variant to infer tooling from CONSTRAINTS.md (supports C++, Python, Go, etc.).
+
+---
+
+## JTBD 13: Benchmark Suite ⏳ Beta
+**When** I want to compare eval strategies, **I want** a benchmark runner with test projects and a dashboard, **so that** I can determine which approach produces the best results.
+
+### User Stories
+- As a developer, I want 3 benchmark projects: JS recipe app, Rust CSV tool, C++ snake game.
+- As a developer, I want `./benchmarks/run-bench.sh all all 3` to run the full 3x3 matrix (9 runs).
+- As a developer, I want an HTML dashboard that shows pass rate, time, cost, and quality scores with charts.
+- As a developer, I want to track: cost, time, quality score, automated metrics, and bug discovery rate.
+
+---
+
+## JTBD 14: Agent Teams Skill ⏳ Beta
+**When** I want generator and evaluator running in parallel, **I want** a skill that uses Claude Code's native agent teams feature, **so that** I can compare parallel execution against sequential loop iteration.

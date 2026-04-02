@@ -284,6 +284,13 @@ def write_project_config(dest: Path, variant: str, is_init: bool = False) -> Non
             "ralph_version": __version__,
         }
 
+    # Ensure v2 config exists
+    if "v2" not in config:
+        config["v2"] = {
+            "eval_strategy": "prompt",
+            "fail_threshold": 50,
+        }
+
     config_path.write_text(json.dumps(config, indent=2) + "\n")
 
 
@@ -324,6 +331,27 @@ def copy_shared_files(dest: Path) -> None:
         script_path = dest / script
         if script_path.exists():
             script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    # Copy v2/ directory if it exists
+    v2_src = shared / "v2"
+    if v2_src.is_dir():
+        v2_dest = dest / "v2"
+        v2_dest.mkdir(parents=True, exist_ok=True)
+        for f in v2_src.iterdir():
+            if f.is_file():
+                shutil.copy2(f, v2_dest / f.name)
+        # Make v2 scripts executable
+        for script_name in ("v2-loop.sh", "v2-codex-review.sh"):
+            script_path = v2_dest / script_name
+            if script_path.exists():
+                script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        # Symlink format-stream.sh into v2/ (reuse v1's)
+        fmt_link = v2_dest / "format-stream.sh"
+        if not fmt_link.exists() and not fmt_link.is_symlink():
+            try:
+                fmt_link.symlink_to("../format-stream.sh")
+            except OSError:
+                pass  # Symlink may fail on some filesystems
 
     # Copy .claude/commands/ slash commands
     commands_src = shared / "claude-commands"
@@ -580,17 +608,25 @@ def cmd_init(args: list[str]) -> None:
     print(f"Done! Ralph v{__version__} ({variant}) is ready.")
     print()
     print("Next steps:")
-    print("  1. Run /ralph-reqs in Claude Code to brainstorm and define requirements")
-    print("  2. Run /ralph-spec to convert requirements into Ralph specs")
-    print("     (or write specs manually in specs/)")
-    print("  3. Run: ./loop.sh plan        (generate implementation plan)")
-    print("  4. Run: ./loop.sh             (start building)")
-    print("  5. Run: ./loop.sh help        (list all available loop modes)")
+    print("  v1: /ralph-reqs → /ralph-spec → ./loop.sh plan → ./loop.sh")
+    print("  v2: /ralph-v2-product → ./v2-loop.sh auto 3")
     print()
-    print("Slash commands installed in .claude/commands/:")
-    print("  /ralph-reqs    — Interactive requirements gathering & ideation")
-    print("  /ralph-spec    — Convert planning docs into Ralph specs")
-    print("  /ralph-manage  — Guided setup wizard (init, update, sync)")
+    print("  v1 workflow:")
+    print("    1. /ralph-reqs       — Brainstorm and define requirements")
+    print("    2. /ralph-spec       — Convert requirements into Ralph specs")
+    print("    3. ./loop.sh plan    — Generate implementation plan")
+    print("    4. ./loop.sh         — Start building")
+    print()
+    print("  v2 workflow (beta):")
+    print("    1. /ralph-v2-product — Define product spec + constraints")
+    print("    2. ./v2-loop.sh auto — Build + evaluate cycles")
+    print("    3. ./v2-loop.sh help — See all v2 modes")
+    print()
+    print("Slash commands installed:")
+    print("  /ralph-reqs        — v1: Interactive requirements gathering")
+    print("  /ralph-spec        — v1: Convert planning docs into specs")
+    print("  /ralph-v2-product  — v2: Product spec + constraints")
+    print("  /ralph-manage      — Guided setup wizard")
 
 
 def cmd_update(args: list[str]) -> None:
@@ -694,7 +730,7 @@ def cmd_sync(args: list[str]) -> None:
     print(f"\nUpdated {updated}/{total} projects. {skipped} skipped.")
 
 
-GLOBAL_COMMANDS = ["ralph-manage.md"]
+GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
 
 
 def cmd_install_commands(args: list[str]) -> None:
