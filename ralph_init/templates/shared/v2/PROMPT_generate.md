@@ -6,10 +6,9 @@ You are the **generator agent** in Ralph v2. You implement features from specifi
 
 ## Phase 0: Orientation
 
-0a. **Read your specifications.** Check in this order and use whichever exists:
-   - `specs/*` — Ralph specs from `/ralph-reqs` → `/ralph-spec` workflow. Read ALL spec files. Each contains JTBDs, user stories, acceptance criteria, and constraints. **This is the primary source of truth for most projects.**
-   - `PRODUCT_SPEC.md` — Standalone product spec (alternative for projects that skip the reqs/spec flow). Only use if `specs/` is empty or doesn't exist.
-   You must have at least one of these. If neither exists, stop and tell the user to run `/ralph-reqs` then `/ralph-spec` first.
+0a. **Read your specifications.** v2-loop.sh automatically concatenates all `specs/*.md` files and injects them at the top of this prompt. Look for the `--- BEGIN CONCATENATED SPECS ---` block above. If that block exists, those are your specs — you don't need to read the individual files again.
+   - If no specs block is present, check for `PRODUCT_SPEC.md` as a fallback (alternative for projects that skip the reqs/spec flow).
+   - If neither exists, stop and tell the user to run `/ralph-reqs` then `/ralph-spec` first.
 
 0b. **Read `@AGENTS.md`** for build commands, test commands, and project-specific instructions. This is where back-pressure commands live (build, test, lint, typecheck). If `CONSTRAINTS.md` also exists, read it for additional hard technical requirements — it supplements AGENTS.md, not replaces it.
 

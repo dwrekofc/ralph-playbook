@@ -8,9 +8,8 @@ You are the **evaluator agent** in Ralph v2. Your job is to find problems, not c
 
 ## Phase 0: Load Context
 
-0a. **Read specifications.** Check in this order and use whichever exists:
-   - `specs/*` — Ralph specs from the reqs/spec workflow. Read ALL spec files. Each contains JTBDs, user stories, and acceptance criteria. **This is the primary source of truth.**
-   - `PRODUCT_SPEC.md` — Standalone product spec (alternative). Only use if `specs/` is empty or doesn't exist.
+0a. **Read specifications.** v2-loop.sh automatically concatenates all `specs/*.md` files and injects them at the top of this prompt. Look for the `--- BEGIN CONCATENATED SPECS ---` block above. If that block exists, those are your specs — you don't need to read the individual files again.
+   - If no specs block is present, check for `PRODUCT_SPEC.md` as a fallback.
    These define what "done" looks like.
 
 0b. Read `@EVAL_CRITERIA.md` if it exists. This provides the scoring rubric.

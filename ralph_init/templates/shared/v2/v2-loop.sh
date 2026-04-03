@@ -124,6 +124,28 @@ run_prompt() {
 ${prompt_content}"
     fi
 
+    # Auto-inject concatenated specs/* as context for generate/eval modes
+    local specs_context=""
+    if [[ "$MODE" == "generate" || "$MODE" == "auto" || "$MODE" == "eval" ]]; then
+        if [ -d "specs" ] && ls specs/*.md &>/dev/null; then
+            specs_context="
+--- BEGIN CONCATENATED SPECS (from specs/*.md) ---
+"
+            for spec_file in specs/*.md; do
+                specs_context="${specs_context}
+=== $(basename "$spec_file") ===
+$(cat "$spec_file")
+
+"
+            done
+            specs_context="${specs_context}--- END CONCATENATED SPECS ---
+"
+            prompt_content="${specs_context}
+${prompt_content}"
+            echo "  Injected $(ls specs/*.md | wc -l | tr -d ' ') spec file(s) as context"
+        fi
+    fi
+
     echo "$prompt_content" | claude -p \
         --dangerously-skip-permissions \
         --output-format=stream-json \
