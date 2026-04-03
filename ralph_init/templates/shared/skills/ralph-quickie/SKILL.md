@@ -16,7 +16,7 @@ argument-hint: <task description>
 
 ## Phase 0: Understand the Project
 
-Before any work, deeply explore the project. Read source code, configs, docs, tests, build files, recent git history, directory structure. Understand what the project is, how it's built, how it's tested, what conventions it follows. Use as many parallel subagents as needed to do this fast.
+Before any work, deeply explore the project. Read source code, configs, docs, tests, build files, recent git history, directory structure. Understand what the project is, how it's built, how it's tested, what conventions it follows. Use as many parallel subagents as needed for this read-only exploration (subagents are lightweight workers for research — not the same as the agent team you'll create in Phase 3).
 
 Skip irrelevant dirs (node_modules, .git, build artifacts, vendored deps). Focus on human-authored code and config.
 
@@ -62,9 +62,11 @@ Discover what back-pressure is available by examining the project's build files,
 
 ---
 
-## Phase 3: Launch Team
+## Phase 3: Launch Agent Team
 
-Create 3 teammates. Give each their role, the task context from Phase 0, and the back-pressure commands from Phase 2.
+**IMPORTANT: Use Claude Code agent teams — NOT subagents.** Agent teams are separate Claude Code sessions that coordinate via a shared task list and direct messaging. Each teammate has its own context window and works independently. This is fundamentally different from subagents, which are lightweight workers inside your session. You need agent teams here because the generator, evaluator, and documentor must work in parallel with their own contexts and communicate with each other.
+
+Create an agent team with 3 teammates. Give each their role, the task context from Phase 0, and the back-pressure commands from Phase 2.
 
 ### Generator
 Executes the task. Builds the thing.

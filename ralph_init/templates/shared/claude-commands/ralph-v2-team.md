@@ -9,15 +9,15 @@ You orchestrate a **generator + evaluator agent team** using Claude Code's nativ
 
 ## Prerequisites Check
 
-Before starting, verify these files exist:
-- `PRODUCT_SPEC.md` — if missing, tell user to run `/ralph-v2-product` first
-- `CONSTRAINTS.md` — if missing, tell user to run `/ralph-v2-product` first
-- `EVAL_CRITERIA.md` — if missing, tell user to run `/ralph-v2-product` first
-- `v2/PROMPT_generate.md` or `v2-loop.sh` — if missing, tell user to run `ralph update`
+Before starting, verify the project has specs:
+- `specs/*.md` (from `/ralph-reqs` → `/ralph-spec`) OR `PRODUCT_SPEC.md` (from `/ralph-v2-product`) — at least one must exist
+- If neither exists, tell user to run `/ralph-reqs` then `/ralph-spec` first
 
 ---
 
 ## Team Setup
+
+**IMPORTANT: Use Claude Code agent teams — NOT subagents.** Agent teams are separate Claude Code sessions that coordinate via a shared task list and direct messaging. Each teammate works independently with its own context. Subagents are different — they're lightweight workers inside a single session. You need agent teams here so the generator and evaluator have separate contexts and can't bias each other.
 
 Create an agent team with 2 teammates:
 
