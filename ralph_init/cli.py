@@ -883,7 +883,7 @@ def cmd_discover(args: list[str]) -> None:
     print(f"\nDone! Registered {updated}/{len(found)} projects. {failed} failed.")
 
 
-GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
+GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md", "ralph-quickie.md"]
 
 
 def cmd_install_commands(args: list[str]) -> None:
