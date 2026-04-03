@@ -1,8 +1,14 @@
+---
+name: ralph-quickie
+description: Ad-hoc 3-agent team (generator, evaluator, documentor) for any project. Deep-explores codebase, sets up automated back-pressure, builds with TDD, adversarial eval, and produces HANDOFF.md + MANIFEST.md for handoff. Works in any project — Ralph or not.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
+user-invocable: true
+argument-hint: <task description>
+---
+
 # ralph-quickie: Ad-hoc Build + Eval + Document Team
 
-> `/ralph-quickie [task]` — any project, Ralph or not.
-> Triggers: "ralph quickie", "quickie build", "quick build and eval"
-> Zero dependency on external files. Self-contained workflow.
+> Any project, Ralph or not. Zero dependency on external files. Self-contained.
 
 3-agent team: Generator (builds), Evaluator (quality gate), Documentor (traces everything). You are the lead orchestrating all three.
 

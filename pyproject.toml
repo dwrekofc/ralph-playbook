@@ -1,6 +1,6 @@
 [project]
 name = "ralph"
-version = "0.5.0b0"
+version = "0.5.1b0"
 description = "AI development framework scaffolding and management"
 requires-python = ">=3.10"
 

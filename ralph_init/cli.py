@@ -883,28 +883,42 @@ def cmd_discover(args: list[str]) -> None:
     print(f"\nDone! Registered {updated}/{len(found)} projects. {failed} failed.")
 
 
-GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md", "ralph-quickie.md"]
+GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
+GLOBAL_SKILLS = ["ralph-quickie"]
 
 
 def cmd_install_commands(args: list[str]) -> None:
-    """Install global Claude Code slash commands to ~/.claude/commands/."""
-    dest = Path.home() / ".claude" / "commands"
-    dest.mkdir(parents=True, exist_ok=True)
+    """Install global Claude Code slash commands and skills."""
+    # Install commands to ~/.claude/commands/
+    cmd_dest = Path.home() / ".claude" / "commands"
+    cmd_dest.mkdir(parents=True, exist_ok=True)
 
     commands_src = TEMPLATES_DIR / "shared" / "claude-commands"
-    installed = []
 
     for name in GLOBAL_COMMANDS:
         src = commands_src / name
         if src.exists():
-            shutil.copy2(src, dest / name)
-            installed.append(name)
-
-    if installed:
-        for name in installed:
+            shutil.copy2(src, cmd_dest / name)
             print(f"  Installed: ~/.claude/commands/{name}")
-    else:
-        print("  No global commands to install.")
+
+    # Remove old ralph-quickie.md command if it exists (migrated to skill)
+    old_quickie = cmd_dest / "ralph-quickie.md"
+    if old_quickie.exists():
+        old_quickie.unlink()
+
+    # Install skills to ~/.claude/skills/<name>/SKILL.md
+    skills_src = TEMPLATES_DIR / "shared" / "skills"
+    skills_dest = Path.home() / ".claude" / "skills"
+
+    for name in GLOBAL_SKILLS:
+        src_dir = skills_src / name
+        if src_dir.is_dir():
+            dest_dir = skills_dest / name
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for f in src_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, dest_dir / f.name)
+            print(f"  Installed: ~/.claude/skills/{name}/")
 
 
 # ─── Main dispatch ──────────────────────────────────────────────────
