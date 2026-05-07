@@ -108,15 +108,16 @@ I also want this current working dir to have it's own .claude/ folder and a CLAU
 
 ---
 
-## JTBD 8: Multi-CLI Support (Deferred)
-**When** I want to run the Ralph loop with Google Gemini CLI or OpenAI Codex CLI instead of Claude, **I want** the loop and formatter to support multiple AI CLI backends, **so that** I can use Ralph's methodology with any capable AI.
+## JTBD 8: Multi-Harness Support (Codex Implemented)
+**When** I want to run the Ralph loop with OpenAI Codex CLI instead of Claude, **I want** the loop and formatter to select a dedicated Codex harness, **so that** I can use Ralph's methodology without weakening the Claude-specific prompts.
 
 ### User Stories
-- As a developer, I want `loop.sh` to accept a `--cli` flag (or read from a config) to switch between `claude`, `gemini`, and `codex` backends.
-- As a developer, I want `format-stream.sh` to handle different JSON stream formats from each CLI, or have per-CLI formatter scripts.
-- As a developer, I want the loop prompts to work across CLIs with minimal modification (the prompts describe tasks, not Claude-specific features).
+- As a developer, I want `loop.sh` and `v2-loop.sh` to accept `--agent=claude|codex|auto`.
+- As a developer, I want Codex to use `harnesses/codex/PROMPT_*.md`, not root Claude prompts.
+- As a developer, I want Codex skills in `.agents/skills/` and Claude slash commands in `.claude/commands/`.
+- As a developer, I want per-agent JSON formatters so Claude and Codex streaming output both stay readable.
 
-**Status**: Deferred until Gemini CLI and Codex CLI have stable headless streaming formats.
+**Status**: Codex implemented. Gemini remains out of scope.
 
 ---
 
@@ -143,9 +144,9 @@ Parallel evolution motivated by Anthropic's harness design findings: product-lev
 **When** the generator builds features, **I want** a separate evaluator agent to test and grade the implementation, **so that** I get honest quality assessment instead of self-praise.
 
 ### User Stories
-- As a developer, I want 3 eval strategies I can benchmark: dedicated eval prompt, Codex cross-review, and Claude Code agent teams.
+- As a developer, I want 3 eval strategies I can benchmark: dedicated eval prompt, Codex cross-review, and file-based generator/evaluator handoff.
 - As a developer, I want `./v2-loop.sh auto N` to alternate between build and eval cycles with configurable pass thresholds.
-- As a developer, I want `./v2-loop.sh auto N --eval=codex` to use Codex (GPT-5.4) as the evaluator for true model separation.
+- As a developer, I want `./v2-loop.sh auto N --eval=codex` to use Codex (GPT-5.5, reasoning effort high) as the evaluator for true model separation.
 - As a developer, I want a ralph-v2-team skill that orchestrates generator + evaluator as Claude Code agent teammates.
 
 ---

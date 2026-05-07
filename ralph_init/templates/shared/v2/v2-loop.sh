@@ -2,7 +2,7 @@
 # v2-loop.sh — Ralph v2 Beta loop runner
 #
 # Usage:
-#   ./v2-loop.sh generate [max]       Build from PRODUCT_SPEC.md
+#   ./v2-loop.sh [--agent=claude|codex|auto] generate [max]       Build from PRODUCT_SPEC.md
 #   ./v2-loop.sh eval [max]           Adversarial evaluation
 #   ./v2-loop.sh product [max]        Generate product spec from CONSTRAINTS.md
 #   ./v2-loop.sh auto [cycles]        Alternating generate→eval (default: 3 cycles)
@@ -12,10 +12,10 @@
 # Eval strategy flags (for auto/bench modes):
 #   --eval=prompt    Dedicated eval prompt (default)
 #   --eval=codex     Codex cross-review
-#   --eval=teams     Agent teams (file-based)
+#   --eval=teams     File-based generator/evaluator handoff
 #   --eval=all       Run all strategies (benchmark mode)
 #
-# Requires: jq, claude CLI
+# Requires: jq and the selected agent CLI
 
 set -euo pipefail
 
@@ -30,6 +30,7 @@ LOG_DIR="logs"
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
 EVAL_STRATEGY="prompt"
 RETRY_ONLY="false"
+AGENT="claude"
 
 # Read v2 config from .ralph.json
 FAIL_THRESHOLD=50
@@ -46,20 +47,40 @@ MODE=""
 MAX_ITERATIONS=0
 CYCLES=3
 
-# Extract --eval flag from any position
+# Extract flags from any position
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --eval=*) EVAL_STRATEGY="${arg#--eval=}" ;;
+        --agent=*) AGENT="${arg#--agent=}" ;;
         *) ARGS+=("$arg") ;;
     esac
 done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 
+if [ "$AGENT" = "auto" ]; then
+    if command -v claude &>/dev/null; then
+        AGENT="claude"
+    elif command -v codex &>/dev/null; then
+        AGENT="codex"
+    else
+        echo "Error: neither claude nor codex CLI is installed."
+        exit 1
+    fi
+fi
+
+if [ "$AGENT" != "claude" ] && [ "$AGENT" != "codex" ]; then
+    echo "Error: unknown agent '$AGENT'. Expected: claude, codex, auto"
+    exit 1
+fi
+
 if [ $# -eq 0 ]; then
     MODE="generate"
 elif [ "$1" = "help" ]; then
     echo "v2-loop.sh — Ralph v2 Beta loop runner"
+    echo ""
+    echo "Usage: ./v2-loop.sh [--agent=claude|codex|auto] <mode> [max]"
+    echo "Agent: $AGENT"
     echo ""
     echo "Modes:"
     echo "  generate [max]    Build from PRODUCT_SPEC.md (default)"
@@ -71,12 +92,13 @@ elif [ "$1" = "help" ]; then
     echo ""
     echo "Eval strategies (--eval=<strategy>):"
     echo "  prompt            Dedicated eval prompt (default)"
-    echo "  codex             Codex cross-review via /codex:review"
-    echo "  teams             File-based agent teams"
+    echo "  codex             Codex cross-review via codex exec"
+    echo "  teams             File-based generator/evaluator handoff"
     echo "  all               Run all strategies (benchmark)"
     echo ""
     echo "Examples:"
     echo "  ./v2-loop.sh generate 5"
+    echo "  ./v2-loop.sh --agent=codex generate 5"
     echo "  ./v2-loop.sh auto 3 --eval=codex"
     echo "  ./v2-loop.sh bench 2"
     echo ""
@@ -108,7 +130,7 @@ run_prompt() {
 
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
-    local log_file="${LOG_DIR}/v2_${MODE}_${iteration}_${timestamp}.jsonl"
+    local log_file="${LOG_DIR}/v2_${AGENT}_${MODE}_${iteration}_${timestamp}.jsonl"
 
     echo -e "\n--- v2 iteration $iteration started at $(date) ---"
     echo "Prompt: $prompt_file"
@@ -146,13 +168,31 @@ ${prompt_content}"
         fi
     fi
 
-    echo "$prompt_content" | claude -p \
-        --dangerously-skip-permissions \
-        --output-format=stream-json \
-        --model opus \
-        --verbose \
-        | tee "$log_file" \
-        | "$FORMAT_STREAM"
+    if [ "$AGENT" = "codex" ]; then
+        local codex_format="${V2_DIR}/../format-codex-stream.sh"
+        [ ! -f "$codex_format" ] && codex_format="./format-codex-stream.sh"
+        if [ ! -x "$codex_format" ]; then
+            echo "Error: format-codex-stream.sh not found or not executable."
+            exit 1
+        fi
+        echo "$prompt_content" | codex exec \
+            --json \
+            --model gpt-5.5 \
+            --config model_reasoning_effort=high \
+            --sandbox danger-full-access \
+            --ask-for-approval never \
+            - \
+            | tee "$log_file" \
+            | "$codex_format"
+    else
+        echo "$prompt_content" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --model opus \
+            --verbose \
+            | tee "$log_file" \
+            | "$FORMAT_STREAM"
+    fi
 
     echo -e "\n--- v2 iteration $iteration finished at $(date) ---"
 
@@ -175,8 +215,17 @@ get_pass_rate() {
 
 resolve_prompt() {
     local name="$1"
-    # Check v2/ dir first, then project root
-    if [ -f "${V2_DIR}/PROMPT_${name}.md" ]; then
+    if [ "$AGENT" = "codex" ]; then
+        if [ -f "harnesses/codex/v2/PROMPT_${name}.md" ]; then
+            echo "harnesses/codex/v2/PROMPT_${name}.md"
+        elif [ -f "${V2_DIR}/../harnesses/codex/v2/PROMPT_${name}.md" ]; then
+            echo "${V2_DIR}/../harnesses/codex/v2/PROMPT_${name}.md"
+        elif [ -f "${PROJECT_DIR}/harnesses/codex/v2/PROMPT_${name}.md" ]; then
+            echo "${PROJECT_DIR}/harnesses/codex/v2/PROMPT_${name}.md"
+        else
+            echo ""
+        fi
+    elif [ -f "${V2_DIR}/PROMPT_${name}.md" ]; then
         echo "${V2_DIR}/PROMPT_${name}.md"
     elif [ -f "v2/PROMPT_${name}.md" ]; then
         echo "v2/PROMPT_${name}.md"
@@ -255,12 +304,17 @@ run_single_mode() {
 
     if [ -z "$prompt_file" ]; then
         echo "Error: No prompt found for mode '$MODE'"
-        echo "Looked in: ${V2_DIR}/PROMPT_${MODE}.md, v2/PROMPT_${MODE}.md, PROMPT_${MODE}.md"
+        if [ "$AGENT" = "codex" ]; then
+            echo "Looked in: harnesses/codex/v2/PROMPT_${MODE}.md"
+        else
+            echo "Looked in: ${V2_DIR}/PROMPT_${MODE}.md, v2/PROMPT_${MODE}.md, PROMPT_${MODE}.md"
+        fi
         exit 1
     fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Ralph v2 Beta"
+    echo "Agent:    $AGENT"
     echo "Mode:     $MODE"
     echo "Prompt:   $prompt_file"
     echo "Branch:   $CURRENT_BRANCH"
@@ -296,6 +350,7 @@ run_auto_mode() {
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Ralph v2 Beta — Auto Mode"
+    echo "Agent:        $AGENT"
     echo "Cycles:       $CYCLES (generate→eval)"
     echo "Eval:         $EVAL_STRATEGY"
     echo "Threshold:    ${FAIL_THRESHOLD}%"
@@ -468,8 +523,13 @@ if ! command -v jq &>/dev/null; then
     exit 1
 fi
 
-if ! command -v claude &>/dev/null; then
-    echo "Error: claude CLI is required."
+if [ "$AGENT" = "codex" ]; then
+    if ! command -v codex &>/dev/null; then
+        echo "Error: codex CLI is required for --agent=codex."
+        exit 1
+    fi
+elif ! command -v claude &>/dev/null; then
+    echo "Error: claude CLI is required for --agent=claude."
     exit 1
 fi
 

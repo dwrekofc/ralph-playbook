@@ -371,6 +371,7 @@ project-root/
 ├── loop.sh                         # Ralph loop script
 ├── PROMPT_build.md                 # Build mode instructions
 ├── PROMPT_plan.md                  # Plan mode instructions
+├── harnesses/codex/                # Codex-specific prompt variants
 ├── AGENTS.md                       # Operational guide loaded each iteration
 ├── IMPLEMENTATION_PLAN.md          # Prioritized task list (generated/updated by Ralph)
 ├── specs/                          # Requirement specs (one per JTBD topic)
@@ -392,11 +393,27 @@ _Setup:_ Make the script executable before first use:
 chmod +x loop.sh
 ```
 
-_Core function:_ Continuously feeds prompt file to Claude, manages iteration limits, and pushes changes after each task completion.
+_Core function:_ Continuously feeds the selected harness prompt to Claude or Codex, manages iteration limits, and pushes changes after each task completion.
+
+Claude remains the default harness and uses the root `PROMPT_<mode>.md` files:
+
+```bash
+./loop.sh plan
+./loop.sh
+```
+
+Codex uses separate prompt variants under `harnesses/codex/`:
+
+```bash
+./loop.sh --agent=codex plan
+./loop.sh --agent=codex
+```
+
+The two prompt families are intentionally separate. Claude prompts can keep Opus/Sonnet-specific instructions; Codex prompts should use GPT-5.5 with reasoning effort high for Opus-equivalent work and medium for Sonnet-equivalent work.
 
 ### PROMPTS
 
-The instruction set for each loop iteration. Swap between PLANNING and BUILDING versions as needed.
+The instruction set for each loop iteration. Swap between PLANNING and BUILDING versions as needed. Root prompts are Claude-specific; Codex prompts live under `harnesses/codex/` and are selected only with `--agent=codex`.
 
 _Prompt Structure:_
 

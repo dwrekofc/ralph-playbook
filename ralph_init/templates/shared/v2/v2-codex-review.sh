@@ -110,17 +110,21 @@ features_fail: N
 PROMPT_EOF
 )
 
-# ─── Try Codex CLI first, fall back to Claude ───────────────────────
+# ─── Run Codex CLI ──────────────────────────────────────────────────
 
 if command -v codex &>/dev/null; then
     echo "  Using Codex CLI for review..."
-    echo "$REVIEW_PROMPT" | codex -p --model o4-mini 2>/dev/null > EVAL_REPORT.md || {
-        echo "  Codex CLI failed, falling back to Claude..."
-        echo "$REVIEW_PROMPT" | claude -p --model sonnet --output-format text > EVAL_REPORT.md
-    }
+    echo "$REVIEW_PROMPT" | codex exec \
+        --model gpt-5.5 \
+        --config model_reasoning_effort=high \
+        --sandbox danger-full-access \
+        --ask-for-approval never \
+        - \
+        2>/dev/null > EVAL_REPORT.md
 else
-    echo "  Codex CLI not found, using Claude (Sonnet) as cross-reviewer..."
-    echo "$REVIEW_PROMPT" | claude -p --model sonnet --output-format text > EVAL_REPORT.md
+    echo "  Error: codex CLI is required for Codex cross-review."
+    rm -f "$DIFF_FILE"
+    exit 1
 fi
 
 # ─── Tag this eval point ────────────────────────────────────────────

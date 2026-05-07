@@ -74,12 +74,13 @@ RALPH INIT
                     SAP variant is always private regardless of this flag.
 
   What it does (in order):
-    1. Copies shared ralph files: loop.sh, format-stream.sh, all PROMPT_*.md, IMPLEMENTATION_PLAN.md
+    1. Copies shared ralph files: loop.sh, format-stream.sh, format-codex-stream.sh,
+       all Claude root PROMPT_*.md, Codex harness prompts, IMPLEMENTATION_PLAN.md
     2. Builds .gitignore from shared base + variant-specific ignores
     3. Copies variant-specific files (AGENTS.md, config files). {{{{PROJECT_NAME}}}} is replaced with directory name.
     4. Replaces [project-specific goal] in PROMPT_plan.md if --desc provided
     5. Creates CLAUDE.md symlink -> AGENTS.md
-    6. Installs .claude/commands/ slash commands (ralph-reqs, ralph-spec, ralph-manage, etc.)
+    6. Installs .claude/commands/ slash commands and .agents/skills/ Codex skills
     7. Creates project directories (specs/, src/, .planning/, etc. — varies by variant)
     8. Writes .ralph.json to project root (variant, timestamp, version)
     9. Registers project in ~/.ralph/registry.json
@@ -125,7 +126,7 @@ RALPH UPDATE
     4. Copies variant-specific files (same as init step 3)
     5. Replaces project goal if --desc provided (same as init step 4)
     6. Recreates CLAUDE.md symlink (same as init step 5)
-    7. Updates .claude/commands/ slash commands (same as init step 6)
+    7. Updates .claude/commands/ slash commands and .agents/skills/ Codex skills
     8. Updates .ralph.json with last_updated_at and current ralph version
     9. Updates registry entry in ~/.ralph/registry.json
 
@@ -211,10 +212,12 @@ FILES:
   ~/.ralph/registry.json   Central registry of all ralph projects. Created automatically.
 
 WORKFLOW:
-  ralph init js --desc "goal"   ->  scaffold new project
-  ralph update                  ->  update current project after brew upgrade
-  ralph list                    ->  see all ralph projects
-  ralph sync                    ->  update every project after brew upgrade
+  ralph init js --desc "goal"           ->  scaffold new project
+  ralph update                          ->  update current project after brew upgrade
+  ralph list                            ->  see all ralph projects
+  ralph sync                            ->  update every project after brew upgrade
+  ./loop.sh --agent=codex plan          ->  run the planning loop with Codex
+  ./loop.sh --agent=codex               ->  run the build loop with Codex
 """
 
 
@@ -321,7 +324,7 @@ def copy_shared_files(dest: Path) -> None:
     shared = TEMPLATES_DIR / "shared"
 
     # Copy fixed files + all PROMPT_*.md files (auto-discovered)
-    fixed_files = ["loop.sh", "format-stream.sh", "IMPLEMENTATION_PLAN.md"]
+    fixed_files = ["loop.sh", "format-stream.sh", "format-codex-stream.sh", "IMPLEMENTATION_PLAN.md"]
     prompt_files = sorted(f.name for f in shared.glob("PROMPT_*.md"))
     for name in fixed_files + prompt_files:
         src = shared / name
@@ -329,10 +332,15 @@ def copy_shared_files(dest: Path) -> None:
             shutil.copy2(src, dest / name)
 
     # Make scripts executable
-    for script in ("loop.sh", "format-stream.sh"):
+    for script in ("loop.sh", "format-stream.sh", "format-codex-stream.sh"):
         script_path = dest / script
         if script_path.exists():
             script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    # Copy Codex harness prompts
+    harnesses_src = shared / "harnesses"
+    if harnesses_src.is_dir():
+        shutil.copytree(harnesses_src, dest / "harnesses", dirs_exist_ok=True)
 
     # Copy v2/ directory if it exists
     v2_src = shared / "v2"
@@ -364,6 +372,15 @@ def copy_shared_files(dest: Path) -> None:
             if cmd_file.is_file():
                 shutil.copy2(cmd_file, commands_dest / cmd_file.name)
 
+    # Copy project-local Codex skills
+    codex_skills_src = shared / "codex-skills"
+    if codex_skills_src.is_dir():
+        codex_skills_dest = dest / ".agents" / "skills"
+        codex_skills_dest.mkdir(parents=True, exist_ok=True)
+        for skill_dir in codex_skills_src.iterdir():
+            if skill_dir.is_dir():
+                shutil.copytree(skill_dir, codex_skills_dest / skill_dir.name, dirs_exist_ok=True)
+
 
 def build_gitignore(dest: Path, variant: str) -> None:
     """Build .gitignore from base + variant-specific ignores."""
@@ -387,13 +404,17 @@ def copy_variant_files(dest: Path, variant: str, project_name: str) -> None:
     variant_dir = TEMPLATES_DIR / template_variant
 
     for src_file in variant_dir.iterdir():
-        if not src_file.is_file():
-            continue
-
         name = src_file.name
 
         # gitignore.md is handled separately
         if name == "gitignore.md":
+            continue
+
+        if src_file.is_dir():
+            shutil.copytree(src_file, dest / name, dirs_exist_ok=True)
+            continue
+
+        if not src_file.is_file():
             continue
 
         # Files that are genuinely .md and should keep their name
@@ -611,13 +632,16 @@ def cmd_init(args: list[str]) -> None:
     print()
     print("Next steps:")
     print("  v1: /ralph-reqs → /ralph-spec → ./loop.sh plan → ./loop.sh")
+    print("  v1 Codex: $ralph-reqs → $ralph-spec → ./loop.sh --agent=codex plan → ./loop.sh --agent=codex")
     print("  v2: /ralph-v2-product → ./v2-loop.sh auto 3")
+    print("  v2 Codex: $ralph-v2-product → ./v2-loop.sh --agent=codex auto 3")
     print()
     print("  v1 workflow:")
     print("    1. /ralph-reqs       — Brainstorm and define requirements")
     print("    2. /ralph-spec       — Convert requirements into Ralph specs")
     print("    3. ./loop.sh plan    — Generate implementation plan")
     print("    4. ./loop.sh         — Start building")
+    print("    Codex equivalents use $ralph-* skills and ./loop.sh --agent=codex")
     print()
     print("  v2 workflow (beta):")
     print("    1. /ralph-v2-product — Define product spec + constraints")
@@ -629,6 +653,8 @@ def cmd_init(args: list[str]) -> None:
     print("  /ralph-spec        — v1: Convert planning docs into specs")
     print("  /ralph-v2-product  — v2: Product spec + constraints")
     print("  /ralph-manage      — Guided setup wizard")
+    print("Codex skills installed:")
+    print("  .agents/skills/ralph-* — Codex-native Ralph workflows")
 
 
 def cmd_update(args: list[str]) -> None:
@@ -885,10 +911,19 @@ def cmd_discover(args: list[str]) -> None:
 
 GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
 GLOBAL_SKILLS = ["ralph-quickie"]
+GLOBAL_CODEX_SKILLS = [
+    "ralph-manage",
+    "ralph-new-prompt",
+    "ralph-reqs",
+    "ralph-spec",
+    "ralph-v2-product",
+    "ralph-v2-team",
+    "ralph-quickie",
+]
 
 
 def cmd_install_commands(args: list[str]) -> None:
-    """Install global Claude Code slash commands and skills."""
+    """Install global Claude Code slash commands/skills and Codex skills."""
     # Install commands to ~/.claude/commands/
     cmd_dest = Path.home() / ".claude" / "commands"
     cmd_dest.mkdir(parents=True, exist_ok=True)
@@ -919,6 +954,20 @@ def cmd_install_commands(args: list[str]) -> None:
                 if f.is_file():
                     shutil.copy2(f, dest_dir / f.name)
             print(f"  Installed: ~/.claude/skills/{name}/")
+
+    # Install Codex skills to ~/.agents/skills/<name>/SKILL.md
+    codex_skills_src = TEMPLATES_DIR / "shared" / "codex-skills"
+    codex_skills_dest = Path.home() / ".agents" / "skills"
+
+    for name in GLOBAL_CODEX_SKILLS:
+        src_dir = codex_skills_src / name
+        if src_dir.is_dir():
+            dest_dir = codex_skills_dest / name
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for f in src_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, dest_dir / f.name)
+            print(f"  Installed: ~/.agents/skills/{name}/")
 
 
 # ─── Main dispatch ──────────────────────────────────────────────────
