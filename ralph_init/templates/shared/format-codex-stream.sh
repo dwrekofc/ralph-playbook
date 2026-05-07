@@ -16,6 +16,53 @@ while IFS= read -r line; do
     msg_type=$(echo "$line" | jq -r '.msg.type // .type // empty')
 
     case "$msg_type" in
+        thread.started)
+            thread_id=$(echo "$line" | jq -r '.thread_id // empty')
+            echo -e "${BOLD}${CYAN}━━━ Codex Thread ━━━${RESET}"
+            echo -e "${DIM}Thread: ${thread_id}${RESET}"
+            echo ""
+            ;;
+
+        turn.started)
+            echo -e "${BOLD}${CYAN}━━━ Turn Started ━━━${RESET}"
+            ;;
+
+        item.started)
+            item_type=$(echo "$line" | jq -r '.item.type // empty')
+            case "$item_type" in
+                command_execution)
+                    cmd=$(echo "$line" | jq -r '.item.command // empty')
+                    echo -e "${YELLOW}[tool] ${BOLD}exec${RESET} ${DIM}${cmd}${RESET}"
+                    ;;
+                *)
+                    echo -e "${CYAN}[${item_type:-item}]${RESET}"
+                    ;;
+            esac
+            ;;
+
+        item.completed)
+            item_type=$(echo "$line" | jq -r '.item.type // empty')
+            case "$item_type" in
+                agent_message)
+                    content=$(echo "$line" | jq -r '.item.text // empty')
+                    [ -n "$content" ] && echo -e "${WHITE}${content}${RESET}\n"
+                    ;;
+                command_execution)
+                    exit_code=$(echo "$line" | jq -r '.item.exit_code // empty')
+                    output=$(echo "$line" | jq -r '.item.aggregated_output // empty' | head -c 240)
+                    if [ -n "$exit_code" ] && [ "$exit_code" != "0" ]; then
+                        echo -e "${RED}  [result] exit ${exit_code}${RESET} ${DIM}${output}${RESET}"
+                    else
+                        echo -e "${GREEN}  [result]${RESET} ${DIM}${output}${RESET}"
+                    fi
+                    ;;
+                *)
+                    preview=$(echo "$line" | jq -c '.item // .' | head -c 240)
+                    echo -e "${CYAN}[${item_type:-item completed}]${RESET} ${DIM}${preview}${RESET}"
+                    ;;
+            esac
+            ;;
+
         text|agent_message|assistant_message)
             content=$(echo "$line" | jq -r '.msg.content // .message // .content // empty')
             [ -n "$content" ] && echo -e "${WHITE}${content}${RESET}\n"

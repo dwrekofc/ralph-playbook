@@ -150,8 +150,7 @@ while true; do
             --json \
             --model gpt-5.5 \
             --config model_reasoning_effort=high \
-            --sandbox danger-full-access \
-            --ask-for-approval never \
+            --dangerously-bypass-approvals-and-sandbox \
             - \
             | tee "$LOG_FILE" \
             | ./format-codex-stream.sh

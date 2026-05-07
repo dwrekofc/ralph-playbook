@@ -117,8 +117,7 @@ if command -v codex &>/dev/null; then
     echo "$REVIEW_PROMPT" | codex exec \
         --model gpt-5.5 \
         --config model_reasoning_effort=high \
-        --sandbox danger-full-access \
-        --ask-for-approval never \
+        --dangerously-bypass-approvals-and-sandbox \
         - \
         2>/dev/null > EVAL_REPORT.md
 else

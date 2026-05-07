@@ -179,8 +179,7 @@ ${prompt_content}"
             --json \
             --model gpt-5.5 \
             --config model_reasoning_effort=high \
-            --sandbox danger-full-access \
-            --ask-for-approval never \
+            --dangerously-bypass-approvals-and-sandbox \
             - \
             | tee "$log_file" \
             | "$codex_format"
