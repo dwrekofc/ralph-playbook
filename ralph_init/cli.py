@@ -119,9 +119,9 @@ RALPH UPDATE
   What it does (in order):
     1. Reads .ralph.json from current directory to determine variant
     2. Copies shared ralph files (same as init step 1)
-    3. Rebuilds .gitignore from templates
-    4. Refreshes variant-specific template files
-    5. Recreates CLAUDE.md symlink
+    3. Appends missing Ralph .gitignore entries if .gitignore exists
+    4. Adds missing variant-specific template files without overwriting existing files
+    5. Preserves existing CLAUDE.md/AGENTS.md; creates the symlink only when safe
     6. Updates .claude/commands/ slash commands and .agents/skills/ Codex skills
     7. Updates .ralph.json with last_updated_at and current ralph version
     8. Updates registry entry in ~/.ralph/registry.json
@@ -183,7 +183,7 @@ RALPH SYNC
     2. For each registered project:
        a. Checks path exists on disk (warns and skips if not)
        b. Checks .ralph.json exists (warns and skips if not)
-       c. Changes to project directory and runs update logic
+       c. Changes to project directory and runs non-destructive update logic
        d. Prints status: "Updated: <path> (<variant>)"
     3. Prints summary: "Updated N/M projects. S skipped."
 
@@ -594,22 +594,25 @@ def run_update(dest: Path, variant: str) -> None:
     project_name = dest.name
 
     print("  Copying shared Ralph files...")
-    copy_shared_files(dest, overwrite=True)
+    touched = copy_shared_files(dest, overwrite=False)
 
     print("  Building .gitignore...")
-    build_gitignore(dest, variant, overwrite=True)
+    touched |= build_gitignore(dest, variant, overwrite=False)
 
     print(f"  Copying {variant} variant files...")
-    copy_variant_files(dest, variant, project_name, overwrite=True)
+    touched |= copy_variant_files(dest, variant, project_name, overwrite=False)
 
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
-    create_symlink(dest, overwrite=True)
+    touched |= create_symlink(dest, overwrite=False, allow_existing_agents=("AGENTS.md" in touched))
 
     print("  Updating .ralph.json...")
     write_project_config(dest, variant)
 
     print("  Updating registry...")
     register_project(str(dest), variant)
+
+    if not touched:
+        print("  No missing Ralph template files were added.")
 
 
 # ─── Subcommands ────────────────────────────────────────────────────
