@@ -74,9 +74,10 @@ RALPH INIT
   What it does (in order):
     1. Copies shared ralph files: loop.sh, format-stream.sh, format-codex-stream.sh,
        all Claude root PROMPT_*.md, Codex harness prompts, IMPLEMENTATION_PLAN.md
-    2. Builds .gitignore from shared base + variant-specific ignores
-    3. Copies variant-specific files (AGENTS.md, config files). {{{{PROJECT_NAME}}}} is replaced with directory name.
-    4. Creates CLAUDE.md symlink -> AGENTS.md
+    2. Appends Ralph .gitignore entries if .gitignore exists; creates it if missing
+    3. Copies variant-specific files only when target files do not already exist.
+       Existing files such as AGENTS.md, CLAUDE.md, package.json, and tsconfig.json are preserved.
+    4. Creates CLAUDE.md symlink -> AGENTS.md only when Ralph created AGENTS.md
     5. Installs .claude/commands/ slash commands and .agents/skills/ Codex skills
     6. Creates project directories (specs/, src/, .planning/, etc. — varies by variant)
     7. Writes .ralph.json to project root (variant, timestamp, version)
@@ -85,7 +86,7 @@ RALPH INIT
     10. Creates GitHub repo + pushes (unless --no-gh or fork variant)
 
   Smart defaults:
-    - If .git/ already exists: skips git init, still commits new files
+    - If .git/ already exists: skips git init, commits only Ralph-created/modified files
     - If 'origin' remote exists: skips GitHub repo creation
     - fork variant: forces --no-git --no-gh automatically
 
@@ -118,8 +119,8 @@ RALPH UPDATE
   What it does (in order):
     1. Reads .ralph.json from current directory to determine variant
     2. Copies shared ralph files (same as init step 1)
-    3. Rebuilds .gitignore (same as init step 2)
-    4. Copies variant-specific files (same as init step 3)
+    3. Rebuilds .gitignore from templates
+    4. Refreshes variant-specific template files
     5. Recreates CLAUDE.md symlink
     6. Updates .claude/commands/ slash commands and .agents/skills/ Codex skills
     7. Updates .ralph.json with last_updated_at and current ralph version
@@ -295,6 +296,71 @@ def write_project_config(dest: Path, variant: str, is_init: bool = False) -> Non
 
 # ─── File operations (unchanged from original) ─────────────────────
 
+def rel_path(path: Path, root: Path) -> str:
+    """Return a POSIX path relative to root for git commands."""
+    return path.relative_to(root).as_posix()
+
+
+def copy_file(src: Path, target: Path, root: Path, overwrite: bool) -> set[str]:
+    """Copy a file if allowed. Returns the touched relative path."""
+    if target.exists() or target.is_symlink():
+        if not overwrite:
+            print(f"    Preserving existing {rel_path(target, root)}")
+            return set()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, target)
+    return {rel_path(target, root)}
+
+
+def write_file(target: Path, content: str, root: Path, overwrite: bool) -> set[str]:
+    """Write a file if allowed. Returns the touched relative path."""
+    if target.exists() or target.is_symlink():
+        if not overwrite:
+            print(f"    Preserving existing {rel_path(target, root)}")
+            return set()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    return {rel_path(target, root)}
+
+
+def copy_dir(src: Path, target: Path, root: Path, overwrite: bool) -> set[str]:
+    """Copy a directory recursively without overwriting in preserve mode."""
+    touched: set[str] = set()
+    for child in src.rglob("*"):
+        if not child.is_file():
+            continue
+        rel = child.relative_to(src)
+        touched |= copy_file(child, target / rel, root, overwrite)
+    return touched
+
+
+def chmod_if_exists(path: Path) -> None:
+    """Make a script executable if it exists."""
+    if path.exists() and not path.is_symlink():
+        path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def git_commit_paths(dest: Path, paths: set[str], message: str) -> None:
+    """Commit only the given paths, avoiding unrelated brownfield files."""
+    if not paths:
+        print("  No Ralph file changes to commit.")
+        return
+    subprocess.run(["git", "add", "-f", "--", *sorted(paths)], cwd=dest, check=True, capture_output=True)
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"],
+        cwd=dest,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        print("  No staged Ralph changes to commit.")
+        return
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=dest,
+        check=True,
+        capture_output=True,
+    )
+
 def check_sap_credentials() -> None:
     """Verify SAP SSH key and gh CLI auth before scaffolding."""
     ssh_key = Path.home() / ".ssh" / "id_ed25519_sap"
@@ -313,9 +379,10 @@ def check_sap_credentials() -> None:
         sys.exit(1)
 
 
-def copy_shared_files(dest: Path) -> None:
+def copy_shared_files(dest: Path, overwrite: bool = True) -> set[str]:
     """Copy shared template files into dest directory."""
     shared = TEMPLATES_DIR / "shared"
+    touched: set[str] = set()
 
     # Copy fixed files + all PROMPT_*.md files (auto-discovered)
     fixed_files = ["loop.sh", "format-stream.sh", "format-codex-stream.sh", "IMPLEMENTATION_PLAN.md"]
@@ -323,18 +390,16 @@ def copy_shared_files(dest: Path) -> None:
     for name in fixed_files + prompt_files:
         src = shared / name
         if src.exists():
-            shutil.copy2(src, dest / name)
+            touched |= copy_file(src, dest / name, dest, overwrite)
 
     # Make scripts executable
     for script in ("loop.sh", "format-stream.sh", "format-codex-stream.sh"):
-        script_path = dest / script
-        if script_path.exists():
-            script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        chmod_if_exists(dest / script)
 
     # Copy Codex harness prompts
     harnesses_src = shared / "harnesses"
     if harnesses_src.is_dir():
-        shutil.copytree(harnesses_src, dest / "harnesses", dirs_exist_ok=True)
+        touched |= copy_dir(harnesses_src, dest / "harnesses", dest, overwrite)
 
     # Copy v2/ directory if it exists
     v2_src = shared / "v2"
@@ -343,17 +408,16 @@ def copy_shared_files(dest: Path) -> None:
         v2_dest.mkdir(parents=True, exist_ok=True)
         for f in v2_src.iterdir():
             if f.is_file():
-                shutil.copy2(f, v2_dest / f.name)
+                touched |= copy_file(f, v2_dest / f.name, dest, overwrite)
         # Make v2 scripts executable
         for script_name in ("v2-loop.sh", "v2-codex-review.sh"):
-            script_path = v2_dest / script_name
-            if script_path.exists():
-                script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+            chmod_if_exists(v2_dest / script_name)
         # Symlink format-stream.sh into v2/ (reuse v1's)
         fmt_link = v2_dest / "format-stream.sh"
         if not fmt_link.exists() and not fmt_link.is_symlink():
             try:
                 fmt_link.symlink_to("../format-stream.sh")
+                touched.add(rel_path(fmt_link, dest))
             except OSError:
                 pass  # Symlink may fail on some filesystems
 
@@ -364,7 +428,7 @@ def copy_shared_files(dest: Path) -> None:
         commands_dest.mkdir(parents=True, exist_ok=True)
         for cmd_file in commands_src.iterdir():
             if cmd_file.is_file():
-                shutil.copy2(cmd_file, commands_dest / cmd_file.name)
+                touched |= copy_file(cmd_file, commands_dest / cmd_file.name, dest, overwrite)
 
     # Copy project-local Codex skills
     codex_skills_src = shared / "codex-skills"
@@ -373,10 +437,12 @@ def copy_shared_files(dest: Path) -> None:
         codex_skills_dest.mkdir(parents=True, exist_ok=True)
         for skill_dir in codex_skills_src.iterdir():
             if skill_dir.is_dir():
-                shutil.copytree(skill_dir, codex_skills_dest / skill_dir.name, dirs_exist_ok=True)
+                touched |= copy_dir(skill_dir, codex_skills_dest / skill_dir.name, dest, overwrite)
+
+    return touched
 
 
-def build_gitignore(dest: Path, variant: str) -> None:
+def build_gitignore(dest: Path, variant: str, overwrite: bool = True) -> set[str]:
     """Build .gitignore from base + variant-specific ignores."""
     parts = []
 
@@ -389,13 +455,33 @@ def build_gitignore(dest: Path, variant: str) -> None:
     if variant_gi.exists():
         parts.append(variant_gi.read_text())
 
-    (dest / ".gitignore").write_text("\n".join(parts))
+    content = "\n".join(parts).rstrip() + "\n"
+    gitignore = dest / ".gitignore"
+    if overwrite or not gitignore.exists():
+        gitignore.write_text(content)
+        return {".gitignore"}
+
+    existing = gitignore.read_text()
+    missing_lines = [
+        line for line in content.splitlines()
+        if line and line not in existing.splitlines()
+    ]
+    if not missing_lines:
+        print("    Preserving existing .gitignore; Ralph entries already present")
+        return set()
+
+    addition = "\n# Ralph\n" + "\n".join(missing_lines) + "\n"
+    separator = "" if existing.endswith("\n") else "\n"
+    gitignore.write_text(existing + separator + addition)
+    print("    Appended Ralph entries to existing .gitignore")
+    return {".gitignore"}
 
 
-def copy_variant_files(dest: Path, variant: str, project_name: str) -> None:
+def copy_variant_files(dest: Path, variant: str, project_name: str, overwrite: bool = True) -> set[str]:
     """Copy variant-specific template files into dest directory."""
     template_variant = VARIANT_TEMPLATE.get(variant, variant)
     variant_dir = TEMPLATES_DIR / template_variant
+    touched: set[str] = set()
 
     for src_file in variant_dir.iterdir():
         name = src_file.name
@@ -405,7 +491,7 @@ def copy_variant_files(dest: Path, variant: str, project_name: str) -> None:
             continue
 
         if src_file.is_dir():
-            shutil.copytree(src_file, dest / name, dirs_exist_ok=True)
+            touched |= copy_dir(src_file, dest / name, dest, overwrite)
             continue
 
         if not src_file.is_file():
@@ -423,15 +509,26 @@ def copy_variant_files(dest: Path, variant: str, project_name: str) -> None:
 
         content = src_file.read_text()
         content = content.replace("{{PROJECT_NAME}}", project_name)
-        (dest / target_name).write_text(content)
+        touched |= write_file(dest / target_name, content, dest, overwrite)
+
+    return touched
 
 
-def create_symlink(dest: Path) -> None:
-    """Create CLAUDE.md -> AGENTS.md symlink."""
+def create_symlink(dest: Path, overwrite: bool = True, allow_existing_agents: bool = False) -> set[str]:
+    """Create CLAUDE.md -> AGENTS.md symlink when safe."""
     link = dest / "CLAUDE.md"
+    agents = dest / "AGENTS.md"
     if link.exists() or link.is_symlink():
+        if not overwrite:
+            print("    Preserving existing CLAUDE.md")
+            return set()
         link.unlink()
+    if not overwrite and (agents.exists() or agents.is_symlink()) and not allow_existing_agents:
+        # Existing AGENTS.md may already point at CLAUDE.md; avoid creating a symlink loop.
+        print("    Preserving existing AGENTS.md; not creating CLAUDE.md symlink")
+        return set()
     link.symlink_to("AGENTS.md")
+    return {"CLAUDE.md"}
 
 
 def create_dirs(dest: Path, variant: str) -> None:
@@ -440,16 +537,19 @@ def create_dirs(dest: Path, variant: str) -> None:
         (dest / d).mkdir(parents=True, exist_ok=True)
 
 
-def git_init(dest: Path, variant: str) -> None:
+def git_init(dest: Path, variant: str, paths: set[str] | None = None) -> None:
     """Initialize git repo and make initial commit."""
     subprocess.run(["git", "init"], cwd=dest, check=True, capture_output=True)
-    subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"init: ralph {variant}"],
-        cwd=dest,
-        check=True,
-        capture_output=True,
-    )
+    if paths is None:
+        subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"init: ralph {variant}"],
+            cwd=dest,
+            check=True,
+            capture_output=True,
+        )
+    else:
+        git_commit_paths(dest, paths, f"init: ralph {variant}")
 
 
 def github_create(dest: Path, project_name: str, variant: str, private_override: bool = False) -> None:
@@ -494,16 +594,16 @@ def run_update(dest: Path, variant: str) -> None:
     project_name = dest.name
 
     print("  Copying shared Ralph files...")
-    copy_shared_files(dest)
+    copy_shared_files(dest, overwrite=True)
 
     print("  Building .gitignore...")
-    build_gitignore(dest, variant)
+    build_gitignore(dest, variant, overwrite=True)
 
     print(f"  Copying {variant} variant files...")
-    copy_variant_files(dest, variant, project_name)
+    copy_variant_files(dest, variant, project_name, overwrite=True)
 
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
-    create_symlink(dest)
+    create_symlink(dest, overwrite=True)
 
     print("  Updating .ralph.json...")
     write_project_config(dest, variant)
@@ -554,18 +654,20 @@ def cmd_init(args: list[str]) -> None:
     print(f"Project name: {project_name}")
     print()
 
-    # Steps 1-6: shared file operations
+    # Steps 1-6: shared file operations. Init preserves existing files.
+    touched: set[str] = set()
+
     print("  Copying shared Ralph files...")
-    copy_shared_files(dest)
+    touched |= copy_shared_files(dest, overwrite=False)
 
     print("  Building .gitignore...")
-    build_gitignore(dest, variant)
+    touched |= build_gitignore(dest, variant, overwrite=False)
 
     print(f"  Copying {variant} variant files...")
-    copy_variant_files(dest, variant, project_name)
+    touched |= copy_variant_files(dest, variant, project_name, overwrite=False)
 
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
-    create_symlink(dest)
+    touched |= create_symlink(dest, overwrite=False, allow_existing_agents=("AGENTS.md" in touched))
 
     # Step 7: Create directories
     dirs = VARIANT_DIRS.get(variant, ("specs", "src"))
@@ -583,15 +685,11 @@ def cmd_init(args: list[str]) -> None:
     if no_git:
         print("  Skipping git (--no-git)...")
     elif (dest / ".git").is_dir():
-        print("  Git repo detected — committing Ralph files...")
-        subprocess.run(["git", "add", "-A"], cwd=dest, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", f"init: ralph {variant}"],
-            cwd=dest, check=True, capture_output=True,
-        )
+        print("  Git repo detected — committing only Ralph files...")
+        git_commit_paths(dest, touched, f"init: ralph {variant}")
     else:
         print("  Initializing git repo...")
-        git_init(dest, variant)
+        git_init(dest, variant, touched)
 
     # Step 11: GitHub repo creation
     if no_gh:
