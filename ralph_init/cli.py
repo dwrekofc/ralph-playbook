@@ -54,7 +54,7 @@ RALPH INIT
   Scaffolds the current directory with ralph methodology files and registers
   the project in the central registry (~/.ralph/registry.json).
 
-  Usage: ralph init <variant> [--desc "goal"] [--no-git] [--no-gh] [--private]
+  Usage: ralph init <variant> [--no-git] [--no-gh] [--private]
 
   Variants (required, exactly one):
     js        JS/TS stack — Bun, TypeScript, shadcn/ui, Tailwind CSS
@@ -64,8 +64,6 @@ RALPH INIT
     sap       SAP JS/TS — same as js, pushes to github.tools.sap (SAP GH Enterprise)
 
   Options:
-    --desc "text"   Project goal string. Replaces [project-specific goal] in PROMPT_plan.md.
-                    Optional. Can be added later by editing PROMPT_plan.md directly.
     --no-git        Skip git init and git commit. No .git directory created.
                     Implies --no-gh (can't push without git).
     --no-gh         Skip GitHub repo creation. Git is still initialized locally.
@@ -78,14 +76,13 @@ RALPH INIT
        all Claude root PROMPT_*.md, Codex harness prompts, IMPLEMENTATION_PLAN.md
     2. Builds .gitignore from shared base + variant-specific ignores
     3. Copies variant-specific files (AGENTS.md, config files). {{{{PROJECT_NAME}}}} is replaced with directory name.
-    4. Replaces [project-specific goal] in PROMPT_plan.md if --desc provided
-    5. Creates CLAUDE.md symlink -> AGENTS.md
-    6. Installs .claude/commands/ slash commands and .agents/skills/ Codex skills
-    7. Creates project directories (specs/, src/, .planning/, etc. — varies by variant)
-    8. Writes .ralph.json to project root (variant, timestamp, version)
-    9. Registers project in ~/.ralph/registry.json
-    10. Initializes git repo + initial commit (unless --no-git)
-    11. Creates GitHub repo + pushes (unless --no-gh or fork variant)
+    4. Creates CLAUDE.md symlink -> AGENTS.md
+    5. Installs .claude/commands/ slash commands and .agents/skills/ Codex skills
+    6. Creates project directories (specs/, src/, .planning/, etc. — varies by variant)
+    7. Writes .ralph.json to project root (variant, timestamp, version)
+    8. Registers project in ~/.ralph/registry.json
+    9. Initializes git repo + initial commit (unless --no-git)
+    10. Creates GitHub repo + pushes (unless --no-gh or fork variant)
 
   Smart defaults:
     - If .git/ already exists: skips git init, still commits new files
@@ -97,11 +94,11 @@ RALPH INIT
     1  Unknown variant, missing SAP credentials, or other error
 
   Examples:
-    ralph init js --desc "A recipe sharing web app"
-    ralph init rust --desc "A system monitor with GPUI"
+    ralph init js
+    ralph init rust
     ralph init blank
-    ralph init fork --desc "A private local-only experiment"
-    ralph init sap --desc "An SAP Fiori companion tool"
+    ralph init fork
+    ralph init sap
     ralph init js --no-gh --private
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -111,10 +108,9 @@ RALPH UPDATE
   Updates the current project with the latest ralph files from the installed
   version. Reads .ralph.json to auto-detect the variant — no variant argument needed.
 
-  Usage: ralph update [--desc "goal"] [--variant <variant>]
+  Usage: ralph update [--variant <variant>]
 
   Options:
-    --desc "text"       Update the project goal in PROMPT_plan.md.
     --variant <variant> Override or set the variant. Required only for projects
                         initialized before v0.4.0 that lack .ralph.json.
                         Valid values: js, rust, blank, fork, sap.
@@ -124,11 +120,10 @@ RALPH UPDATE
     2. Copies shared ralph files (same as init step 1)
     3. Rebuilds .gitignore (same as init step 2)
     4. Copies variant-specific files (same as init step 3)
-    5. Replaces project goal if --desc provided (same as init step 4)
-    6. Recreates CLAUDE.md symlink (same as init step 5)
-    7. Updates .claude/commands/ slash commands and .agents/skills/ Codex skills
-    8. Updates .ralph.json with last_updated_at and current ralph version
-    9. Updates registry entry in ~/.ralph/registry.json
+    5. Recreates CLAUDE.md symlink
+    6. Updates .claude/commands/ slash commands and .agents/skills/ Codex skills
+    7. Updates .ralph.json with last_updated_at and current ralph version
+    8. Updates registry entry in ~/.ralph/registry.json
 
   What it does NOT do:
     - Does NOT create directories (specs/, src/, etc.)
@@ -150,7 +145,6 @@ RALPH UPDATE
 
   Examples:
     ralph update                        # auto-detects variant from .ralph.json
-    ralph update --desc "Updated goal"  # also update project goal
     ralph update --variant js           # migrate pre-0.4.0 project
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -212,7 +206,7 @@ FILES:
   ~/.ralph/registry.json   Central registry of all ralph projects. Created automatically.
 
 WORKFLOW:
-  ralph init js --desc "goal"           ->  scaffold new project
+  ralph init js                         ->  scaffold new project
   ralph update                          ->  update current project after brew upgrade
   ralph list                            ->  see all ralph projects
   ralph sync                            ->  update every project after brew upgrade
@@ -432,15 +426,6 @@ def copy_variant_files(dest: Path, variant: str, project_name: str) -> None:
         (dest / target_name).write_text(content)
 
 
-def replace_project_goal(dest: Path, desc: str) -> None:
-    """Replace [project-specific goal] placeholder in PROMPT_plan.md."""
-    prompt_plan = dest / "PROMPT_plan.md"
-    if prompt_plan.exists():
-        content = prompt_plan.read_text()
-        content = content.replace("[project-specific goal]", desc)
-        prompt_plan.write_text(content)
-
-
 def create_symlink(dest: Path) -> None:
     """Create CLAUDE.md -> AGENTS.md symlink."""
     link = dest / "CLAUDE.md"
@@ -504,7 +489,7 @@ def has_git_remote(dest: Path, remote: str = "origin") -> bool:
 
 # ─── Shared update logic ───────────────────────────────────────────
 
-def run_update(dest: Path, variant: str, desc: str | None = None) -> None:
+def run_update(dest: Path, variant: str) -> None:
     """Run the update steps (shared between update and sync)."""
     project_name = dest.name
 
@@ -516,10 +501,6 @@ def run_update(dest: Path, variant: str, desc: str | None = None) -> None:
 
     print(f"  Copying {variant} variant files...")
     copy_variant_files(dest, variant, project_name)
-
-    if desc:
-        print("  Setting project goal in PROMPT_plan.md...")
-        replace_project_goal(dest, desc)
 
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
     create_symlink(dest)
@@ -538,7 +519,6 @@ def cmd_init(args: list[str]) -> None:
     import argparse
     parser = argparse.ArgumentParser(prog="ralph init", add_help=False)
     parser.add_argument("variant", nargs="?", default=None)
-    parser.add_argument("--desc", default=None)
     parser.add_argument("--no-git", action="store_true", dest="no_git")
     parser.add_argument("--no-gh", action="store_true", dest="no_gh")
     parser.add_argument("--private", action="store_true")
@@ -583,10 +563,6 @@ def cmd_init(args: list[str]) -> None:
 
     print(f"  Copying {variant} variant files...")
     copy_variant_files(dest, variant, project_name)
-
-    if parsed.desc:
-        print("  Setting project goal in PROMPT_plan.md...")
-        replace_project_goal(dest, parsed.desc)
 
     print("  Creating CLAUDE.md -> AGENTS.md symlink...")
     create_symlink(dest)
@@ -661,7 +637,6 @@ def cmd_update(args: list[str]) -> None:
     """Handle: ralph update [options]"""
     import argparse
     parser = argparse.ArgumentParser(prog="ralph update", add_help=False)
-    parser.add_argument("--desc", default=None)
     parser.add_argument("--variant", default=None)
     parsed = parser.parse_args(args)
 
@@ -685,7 +660,7 @@ def cmd_update(args: list[str]) -> None:
     print(f"Updating Ralph ({variant}) in {dest}")
     print()
 
-    run_update(dest, variant, desc=parsed.desc)
+    run_update(dest, variant)
 
     print()
     print(f"Done! Ralph v{__version__} ({variant}) files updated.")

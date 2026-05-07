@@ -68,19 +68,17 @@ If the user passed an explicit argument (`init` or `update`), use that mode rega
    - If unclear or multi-language → recommend **blank**
    - Present all options with descriptions from `ralph --help`
 
-3. Use `request_user_input`: "What's the project goal? This becomes the planning prompt's objective." → becomes `--desc`
-
-4. Use `request_user_input` for git/GitHub preferences:
+3. Use `request_user_input` for git/GitHub preferences:
    - "Create a GitHub repo?" (Yes / No / Private)
    - Map answers to flags: Yes = default, No = `--no-gh`, Private = `--private`
    - Also offer `--no-git` if they don't want git at all
 
-5. Assemble and run the command via Bash:
+4. Assemble and run the command via Bash:
    ```
-   ralph init <variant> --desc "<goal>" [--no-gh] [--private] [--no-git]
+   ralph init <variant> [--no-gh] [--private] [--no-git]
    ```
 
-6. After success, explain next steps:
+5. After success, explain next steps:
    - `$ralph-reqs` → brainstorm requirements
    - `$ralph-spec` → convert to specs
    - `./loop.sh --agent=codex plan` → generate implementation plan
@@ -92,7 +90,7 @@ If the user passed an explicit argument (`init` or `update`), use that mode rega
 
 2. Use `request_user_input` to recommend a variant based on detected stack.
 
-3. Same --desc and git/GitHub questions as greenfield.
+3. Same git/GitHub questions as greenfield.
 
 4. Run `ralph init <variant>` with assembled flags.
 
