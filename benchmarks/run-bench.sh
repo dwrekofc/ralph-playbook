@@ -160,9 +160,12 @@ for project in "${PROJECTS[@]}"; do
         echo "  Duration: ${DURATION}s"
 
         # 8. Parse results
+        # Portable across BSD (macOS) and GNU grep — `grep -oP` is GNU-only and
+        # silently errored on macOS, returning 0. Use sed instead.
         PASS_RATE=0
         if [ -f "EVAL_REPORT.md" ]; then
-            PASS_RATE=$(grep -oP 'pass_rate:\s*\K[0-9]+' EVAL_REPORT.md 2>/dev/null || echo "0")
+            PASS_RATE=$(sed -nE 's/^[[:space:]]*pass_rate:[[:space:]]*([0-9]+).*/\1/p' EVAL_REPORT.md 2>/dev/null | head -1)
+            PASS_RATE="${PASS_RATE:-0}"
         fi
 
         ITERATION_COUNT=$(ls -1 logs/v2_*.jsonl 2>/dev/null | wc -l | tr -d ' ')
