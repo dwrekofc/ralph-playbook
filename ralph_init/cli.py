@@ -986,7 +986,7 @@ def cmd_discover(args: list[str]) -> None:
 
 
 GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
-GLOBAL_SKILLS = ["ralph-quickie"]
+GLOBAL_SKILLS = ["ralph-quickie", "ralph-this"]
 GLOBAL_CODEX_SKILLS = [
     "ralph-manage",
     "ralph-new-prompt",
@@ -995,6 +995,7 @@ GLOBAL_CODEX_SKILLS = [
     "ralph-v2-product",
     "ralph-v2-team",
     "ralph-quickie",
+    "ralph-this",
 ]
 
 
