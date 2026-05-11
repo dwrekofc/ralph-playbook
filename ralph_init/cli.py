@@ -284,12 +284,15 @@ def write_project_config(dest: Path, variant: str, is_init: bool = False) -> Non
             "ralph_version": __version__,
         }
 
-    # Ensure v2 config exists
-    if "v2" not in config:
-        config["v2"] = {
-            "eval_strategy": "prompt",
-            "fail_threshold": 50,
-        }
+    # Migrate legacy v0.5.x `.v2.*` keys to top level (one-time, on init/update)
+    if "v2" in config:
+        legacy = config.pop("v2")
+        # fail_threshold migrates; eval_strategy is dropped (v0.6 has single evaluator)
+        if "fail_threshold" in legacy and "fail_threshold" not in config:
+            config["fail_threshold"] = legacy["fail_threshold"]
+
+    if "fail_threshold" not in config:
+        config["fail_threshold"] = 50
 
     config_path.write_text(json.dumps(config, indent=2) + "\n")
 
@@ -401,25 +404,12 @@ def copy_shared_files(dest: Path, overwrite: bool = True) -> set[str]:
     if harnesses_src.is_dir():
         touched |= copy_dir(harnesses_src, dest / "harnesses", dest, overwrite)
 
-    # Copy v2/ directory if it exists
-    v2_src = shared / "v2"
-    if v2_src.is_dir():
-        v2_dest = dest / "v2"
-        v2_dest.mkdir(parents=True, exist_ok=True)
-        for f in v2_src.iterdir():
-            if f.is_file():
-                touched |= copy_file(f, v2_dest / f.name, dest, overwrite)
-        # Make v2 scripts executable
-        for script_name in ("v2-loop.sh", "v2-codex-review.sh"):
-            chmod_if_exists(v2_dest / script_name)
-        # Symlink format-stream.sh into v2/ (reuse v1's)
-        fmt_link = v2_dest / "format-stream.sh"
-        if not fmt_link.exists() and not fmt_link.is_symlink():
-            try:
-                fmt_link.symlink_to("../format-stream.sh")
-                touched.add(rel_path(fmt_link, dest))
-            except OSError:
-                pass  # Symlink may fail on some filesystems
+    # Copy templates (PRODUCT_SPEC, CONSTRAINTS, EVAL_CRITERIA) — files that aren't
+    # PROMPT_* and don't match the fixed_files list above. Auto-discovered.
+    for tpl_name in ("PRODUCT_SPEC.md", "CONSTRAINTS.md", "EVAL_CRITERIA.md"):
+        src = shared / tpl_name
+        if src.exists():
+            touched |= copy_file(src, dest / tpl_name, dest, overwrite)
 
     # Copy .claude/commands/ slash commands
     commands_src = shared / "claude-commands"
@@ -708,28 +698,16 @@ def cmd_init(args: list[str]) -> None:
     print(f"Done! Ralph v{__version__} ({variant}) is ready.")
     print()
     print("Next steps:")
-    print("  v1: /ralph-reqs → /ralph-spec → ./loop.sh plan → ./loop.sh")
-    print("  v1 Codex: $ralph-reqs → $ralph-spec → ./loop.sh --agent=codex plan → ./loop.sh --agent=codex")
-    print("  v2: /ralph-v2-product → ./v2-loop.sh auto 3")
-    print("  v2 Codex: $ralph-v2-product → ./v2-loop.sh --agent=codex auto 3")
-    print()
-    print("  v1 workflow:")
-    print("    1. /ralph-reqs       — Brainstorm and define requirements")
-    print("    2. /ralph-spec       — Convert requirements into Ralph specs")
-    print("    3. ./loop.sh plan    — Generate implementation plan")
-    print("    4. ./loop.sh         — Start building")
-    print("    Codex equivalents use $ralph-* skills and ./loop.sh --agent=codex")
-    print()
-    print("  v2 workflow (beta):")
-    print("    1. /ralph-v2-product — Define product spec + constraints")
-    print("    2. ./v2-loop.sh auto — Build + evaluate cycles")
-    print("    3. ./v2-loop.sh help — See all v2 modes")
+    print("  Standard:    /ralph-reqs → /ralph-spec → ./loop.sh auto 3")
+    print("  Fast path:   /ralph-rapid-prototype → ./loop.sh auto 3")
+    print("  Cleanroom:   put refs in refs/ → ./cleanroom-loop.sh → review docs/cleanroom/research/")
+    print("  Codex:       prefix slash commands with '$' and add --agent=codex to loop.sh")
     print()
     print("Slash commands installed:")
-    print("  /ralph-reqs        — v1: Interactive requirements gathering")
-    print("  /ralph-spec        — v1: Convert planning docs into specs")
-    print("  /ralph-v2-product  — v2: Product spec + constraints")
-    print("  /ralph-manage      — Guided setup wizard")
+    print("  /ralph-reqs              — Interactive requirements gathering")
+    print("  /ralph-spec              — Convert planning docs into specs")
+    print("  /ralph-rapid-prototype   — Product spec + constraints (fast path)")
+    print("  /ralph-manage            — Guided setup wizard")
     print("Codex skills installed:")
     print("  .agents/skills/ralph-* — Codex-native Ralph workflows")
 
@@ -836,7 +814,7 @@ def cmd_sync(args: list[str]) -> None:
 
 # ─── Discovery ─────────────────────────────────────────────────────
 
-RALPH_MARKERS = ("loop.sh", "PROMPT_build.md", "AGENTS.md")
+RALPH_MARKERS = ("loop.sh", "PROMPT_generate.md", "AGENTS.md", ".ralph.json")
 
 
 def is_ralph_project(path: Path) -> bool:
@@ -992,7 +970,7 @@ GLOBAL_CODEX_SKILLS = [
     "ralph-new-prompt",
     "ralph-reqs",
     "ralph-spec",
-    "ralph-v2-product",
+    "ralph-rapid-prototype",
     "ralph-this",
 ]
 

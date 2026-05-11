@@ -1,13 +1,13 @@
 #!/bin/bash
-# v2-loop.sh — Ralph v2 Beta loop runner
+# loop.sh — Ralph loop runner
 #
 # Usage:
-#   ./v2-loop.sh [--agent=claude|codex|auto] generate [max]       Build from PRODUCT_SPEC.md
-#   ./v2-loop.sh eval [max]           Adversarial evaluation
-#   ./v2-loop.sh product [max]        Generate product spec from CONSTRAINTS.md
-#   ./v2-loop.sh auto [cycles]        Alternating generate→eval (default: 3 cycles)
-#   ./v2-loop.sh bench [cycles]       Benchmark all eval strategies
-#   ./v2-loop.sh help                 List available modes
+#   ./loop.sh [--agent=claude|codex|auto] generate [max]        Build from PRODUCT_SPEC.md / specs
+#   ./loop.sh eval [max]               Adversarial evaluation
+#   ./loop.sh rapid-prototype [max]    Generate product spec from CONSTRAINTS.md
+#   ./loop.sh auto [cycles]            Alternating generate→eval (default: 3 cycles)
+#   ./loop.sh bench [cycles]           Benchmark all eval strategies
+#   ./loop.sh help                     List available modes
 #
 # Eval strategy flags (for auto/bench modes):
 #   --eval=prompt    Dedicated eval prompt (default)
@@ -21,9 +21,9 @@ set -euo pipefail
 
 # ─── Defaults ───────────────────────────────────────────────────────
 
-V2_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(pwd)"
-FORMAT_STREAM="${V2_DIR}/../format-stream.sh"
+FORMAT_STREAM="${SCRIPT_DIR}/format-stream.sh"
 [ ! -f "$FORMAT_STREAM" ] && FORMAT_STREAM="./format-stream.sh"
 
 LOG_DIR="logs"
@@ -32,12 +32,12 @@ EVAL_STRATEGY="prompt"
 RETRY_ONLY="false"
 AGENT="claude"
 
-# Read v2 config from .ralph.json
+# Read config from .ralph.json (with v0.5.x .v2.* back-compat)
 FAIL_THRESHOLD=50
 if [ -f ".ralph.json" ] && command -v jq &>/dev/null; then
-    _threshold=$(jq -r '.v2.fail_threshold // empty' .ralph.json 2>/dev/null)
+    _threshold=$(jq -r '.fail_threshold // .v2.fail_threshold // empty' .ralph.json 2>/dev/null)
     [ -n "$_threshold" ] && FAIL_THRESHOLD="$_threshold"
-    _eval=$(jq -r '.v2.eval_strategy // empty' .ralph.json 2>/dev/null)
+    _eval=$(jq -r '.eval_strategy // .v2.eval_strategy // empty' .ralph.json 2>/dev/null)
     [ -n "$_eval" ] && EVAL_STRATEGY="$_eval"
 fi
 
@@ -77,18 +77,18 @@ fi
 if [ $# -eq 0 ]; then
     MODE="generate"
 elif [ "$1" = "help" ]; then
-    echo "v2-loop.sh — Ralph v2 Beta loop runner"
+    echo "loop.sh — Ralph loop runner"
     echo ""
-    echo "Usage: ./v2-loop.sh [--agent=claude|codex|auto] <mode> [max]"
+    echo "Usage: ./loop.sh [--agent=claude|codex|auto] <mode> [max]"
     echo "Agent: $AGENT"
     echo ""
     echo "Modes:"
-    echo "  generate [max]    Build from PRODUCT_SPEC.md (default)"
-    echo "  eval [max]        Adversarial evaluation pass"
-    echo "  product [max]     Generate product spec from CONSTRAINTS.md"
-    echo "  auto [cycles]     Alternating generate→eval (default: 3 cycles)"
-    echo "  bench [cycles]    Benchmark all eval strategies"
-    echo "  help              Show this help"
+    echo "  generate [max]          Build from PRODUCT_SPEC.md / specs (default)"
+    echo "  eval [max]              Adversarial evaluation pass"
+    echo "  rapid-prototype [max]   Generate product spec from CONSTRAINTS.md"
+    echo "  auto [cycles]           Alternating generate→eval (default: 3 cycles)"
+    echo "  bench [cycles]          Benchmark all eval strategies"
+    echo "  help                    Show this help"
     echo ""
     echo "Eval strategies (--eval=<strategy>):"
     echo "  prompt            Dedicated eval prompt (default)"
@@ -97,12 +97,12 @@ elif [ "$1" = "help" ]; then
     echo "  all               Run all strategies (benchmark)"
     echo ""
     echo "Examples:"
-    echo "  ./v2-loop.sh generate 5"
-    echo "  ./v2-loop.sh --agent=codex generate 5"
-    echo "  ./v2-loop.sh auto 3 --eval=codex"
-    echo "  ./v2-loop.sh bench 2"
+    echo "  ./loop.sh generate 5"
+    echo "  ./loop.sh --agent=codex generate 5"
+    echo "  ./loop.sh auto 3 --eval=codex"
+    echo "  ./loop.sh bench 2"
     echo ""
-    echo "Config (.ralph.json v2 section):"
+    echo "Config (.ralph.json top level):"
     echo "  eval_strategy     Default eval strategy"
     echo "  fail_threshold    Pass rate threshold (default: 50)"
     exit 0
@@ -169,7 +169,7 @@ ${prompt_content}"
     fi
 
     if [ "$AGENT" = "codex" ]; then
-        local codex_format="${V2_DIR}/../format-codex-stream.sh"
+        local codex_format="${SCRIPT_DIR}/format-codex-stream.sh"
         [ ! -f "$codex_format" ] && codex_format="./format-codex-stream.sh"
         if [ ! -x "$codex_format" ]; then
             echo "Error: format-codex-stream.sh not found or not executable."
@@ -218,21 +218,17 @@ get_pass_rate() {
 resolve_prompt() {
     local name="$1"
     if [ "$AGENT" = "codex" ]; then
-        if [ -f "harnesses/codex/v2/PROMPT_${name}.md" ]; then
-            echo "harnesses/codex/v2/PROMPT_${name}.md"
-        elif [ -f "${V2_DIR}/../harnesses/codex/v2/PROMPT_${name}.md" ]; then
-            echo "${V2_DIR}/../harnesses/codex/v2/PROMPT_${name}.md"
-        elif [ -f "${PROJECT_DIR}/harnesses/codex/v2/PROMPT_${name}.md" ]; then
-            echo "${PROJECT_DIR}/harnesses/codex/v2/PROMPT_${name}.md"
+        if [ -f "harnesses/codex/PROMPT_${name}.md" ]; then
+            echo "harnesses/codex/PROMPT_${name}.md"
+        elif [ -f "${SCRIPT_DIR}/harnesses/codex/PROMPT_${name}.md" ]; then
+            echo "${SCRIPT_DIR}/harnesses/codex/PROMPT_${name}.md"
         else
             echo ""
         fi
-    elif [ -f "${V2_DIR}/PROMPT_${name}.md" ]; then
-        echo "${V2_DIR}/PROMPT_${name}.md"
-    elif [ -f "v2/PROMPT_${name}.md" ]; then
-        echo "v2/PROMPT_${name}.md"
     elif [ -f "PROMPT_${name}.md" ]; then
         echo "PROMPT_${name}.md"
+    elif [ -f "${SCRIPT_DIR}/PROMPT_${name}.md" ]; then
+        echo "${SCRIPT_DIR}/PROMPT_${name}.md"
     else
         echo ""
     fi
@@ -247,14 +243,11 @@ run_eval_codex() {
     echo -e "\n--- v2 codex eval $iteration started at $(date) ---"
     echo "Log: $log_file"
 
-    # Use the codex review helper if available
-    local codex_script="${V2_DIR}/v2-codex-review.sh"
-    [ ! -f "$codex_script" ] && codex_script="v2/v2-codex-review.sh"
-
-    if [ -f "$codex_script" ]; then
-        bash "$codex_script" 2>&1 | tee "$log_file"
+    # codex-review.sh was removed; always use the fallback (eval prompt + codex env var)
+    if false; then
+        :
     else
-        # Fallback: run eval prompt with codex instruction prepended
+        # Run eval prompt with codex instruction prepended
         local eval_prompt
         eval_prompt=$(resolve_prompt "eval")
         if [ -n "$eval_prompt" ]; then
@@ -307,15 +300,15 @@ run_single_mode() {
     if [ -z "$prompt_file" ]; then
         echo "Error: No prompt found for mode '$MODE'"
         if [ "$AGENT" = "codex" ]; then
-            echo "Looked in: harnesses/codex/v2/PROMPT_${MODE}.md"
+            echo "Looked in: harnesses/codex/PROMPT_${MODE}.md, ${SCRIPT_DIR}/harnesses/codex/PROMPT_${MODE}.md"
         else
-            echo "Looked in: ${V2_DIR}/PROMPT_${MODE}.md, v2/PROMPT_${MODE}.md, PROMPT_${MODE}.md"
+            echo "Looked in: PROMPT_${MODE}.md, ${SCRIPT_DIR}/PROMPT_${MODE}.md"
         fi
         exit 1
     fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Ralph v2 Beta"
+    echo "Ralph"
     echo "Agent:    $AGENT"
     echo "Mode:     $MODE"
     echo "Prompt:   $prompt_file"
@@ -346,12 +339,12 @@ run_auto_mode() {
     eval_prompt=$(resolve_prompt "eval")
 
     if [ -z "$gen_prompt" ]; then
-        echo "Error: v2/PROMPT_generate.md not found"
+        echo "Error: PROMPT_generate.md not found"
         exit 1
     fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Ralph v2 Beta — Auto Mode"
+    echo "Ralph — Auto Mode"
     echo "Agent:        $AGENT"
     echo "Cycles:       $CYCLES (generate→eval)"
     echo "Eval:         $EVAL_STRATEGY"
@@ -446,7 +439,7 @@ run_bench_mode() {
     project_name=$(basename "$(pwd)")
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Ralph v2 Beta — Benchmark Mode"
+    echo "Ralph — Benchmark Mode"
     echo "Project:      $project_name"
     echo "Strategies:   ${strategies[*]}"
     echo "Cycles each:  $CYCLES"
@@ -544,12 +537,12 @@ case "$MODE" in
     bench)
         run_bench_mode
         ;;
-    generate|eval|product)
+    generate|eval|rapid-prototype)
         run_single_mode
         ;;
     *)
         echo "Error: Unknown mode '$MODE'"
-        echo "Run './v2-loop.sh help' for usage."
+        echo "Run './loop.sh help' for usage."
         exit 1
         ;;
 esac

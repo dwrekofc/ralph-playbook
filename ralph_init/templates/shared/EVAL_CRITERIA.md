@@ -10,7 +10,7 @@
 
 ## Feature Scores
 
-<!-- Populated during /ralph-v2-product session or by PROMPT_product.md -->
+<!-- Populated during /ralph-rapid-prototype session or by PROMPT_rapid_prototype.md -->
 
 | # | Feature | Weight | Score | Evidence |
 |---|---------|--------|-------|----------|

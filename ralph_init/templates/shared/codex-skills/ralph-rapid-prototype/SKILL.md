@@ -1,9 +1,14 @@
-# ralph-v2-product: Quick Product Spec (Alternative Fast Path)
+---
+name: ralph-rapid-prototype
+description: Generate Ralph PRODUCT_SPEC, CONSTRAINTS, and EVAL_CRITERIA files with Codex CLI.
+---
 
-> **Ralph v2 — Single-session product definition for quick prototypes.**
-> Run as a Claude Code slash command: `/ralph-v2-product`
+# ralph-rapid-prototype: Quick Product Spec (Alternative Fast Path)
+
+> **Ralph — Single-session product definition for quick prototypes.**
+> Run as a Codex skill: `$ralph-rapid-prototype`
 >
-> **For most projects, use `/ralph-reqs` → `/ralph-spec` instead.** That flow produces
+> **For most projects, use `$ralph-reqs` → `$ralph-spec` instead.** That flow produces
 > richer specs through interactive brainstorming and captures JTBDs, decisions, and roadmap.
 > This command is the fast path for when you want to skip that and go straight from a
 > description + constraints to building.
@@ -21,7 +26,7 @@ You are a **product-focused collaborator**. You:
 - **Skip what they don't care about** — if they say "skip" or leave blank, YOU decide later
 - **Stay faithful** — expand their input into features without adding extras
 - **Collaborate on test strategy** — what kinds of tests make sense for this project, tech stack, and maturity
-- **Use `AskUserQuestion` for every category** — structured choices where possible, freeform where needed
+- **Use `request_user_input` for every category** — structured choices where possible, freeform where needed
 
 ---
 
@@ -29,12 +34,12 @@ You are a **product-focused collaborator**. You:
 
 ### Step 1: App Description
 
-Use `AskUserQuestion` (freeform):
+Use `request_user_input` (freeform):
 > "Describe your app in 1-4 sentences. What does it do and who is it for?"
 
 ### Step 2: Structured Checklist
 
-Walk through each category. For each, use `AskUserQuestion` with relevant options plus a "Skip (I don't care, you decide)" option.
+Walk through each category. For each, use `request_user_input` with relevant options plus a "Skip (I don't care, you decide)" option.
 
 **Tech Stack:**
 ```
@@ -70,13 +75,13 @@ Platform?       → [Vercel, Railway, AWS, Fly.io, None, Other, Skip]
 ```
 
 **Other Hard Requirements:**
-Use `AskUserQuestion` (freeform):
+Use `request_user_input` (freeform):
 > "Any other hard requirements? Things the app MUST do or MUST NOT do. Leave blank if none."
 > Examples: "Must work offline", "No external API calls", "Must support dark mode"
 
 ### Step 3: Confirm Constraints
 
-Summarize all captured constraints back to the user. Use `AskUserQuestion`:
+Summarize all captured constraints back to the user. Use `request_user_input`:
 > "Here's what I captured. Anything to change?"
 
 Show the summary as a formatted list. If user confirms, proceed. If they want changes, update.
@@ -110,7 +115,7 @@ Based on the app description, generate 3-8 features. For each:
 
 ### Step 6: Collaborate on Test Strategy
 
-Use `AskUserQuestion` to discuss testing:
+Use `request_user_input` to discuss testing:
 > "Based on your [stack] project, here's what I'd test. Which of these make sense?"
 
 Present options appropriate for the project type:
@@ -141,19 +146,19 @@ Populate the evaluation criteria template with:
 
 ```bash
 git add CONSTRAINTS.md PRODUCT_SPEC.md EVAL_CRITERIA.md
-git commit -m "plan: v2 product spec, constraints, and eval criteria"
+git commit -m "plan: product spec, constraints, and eval criteria"
 git push
 ```
 
 Present next steps:
 ```
-Done! Your v2 product spec is ready.
+Done! Your product spec is ready.
 
 Next steps:
   1. Review PRODUCT_SPEC.md and CONSTRAINTS.md — edit anything that's not right
-  2. Run: ./v2-loop.sh generate       (start building)
-  3. Run: ./v2-loop.sh auto 3         (build + evaluate for 3 cycles)
-  4. Run: ./v2-loop.sh help           (see all v2 modes)
+  2. Run: ./loop.sh --agent=codex generate       (start building)
+  3. Run: ./loop.sh --agent=codex auto 3         (build + evaluate for 3 cycles)
+  4. Run: ./loop.sh --agent=codex help           (see all modes)
 ```
 
 ---
@@ -162,6 +167,6 @@ Next steps:
 
 - **Never suggest implementation details.** "Use a hash map for lookups" is implementation. "User can search recipes by ingredient" is product.
 - **Never inflate scope.** Build what was described, nothing more.
-- **Always use AskUserQuestion** for each checklist category. Don't assume.
+- **Always use request_user_input** for each checklist category. Don't assume.
 - **Back-pressure commands are mandatory.** Every project gets build + test + lint at minimum.
 - **Test strategy is collaborative.** The user knows their project better than you — but offer informed options based on tech stack.
