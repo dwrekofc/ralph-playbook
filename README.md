@@ -1,5 +1,19 @@
 # The Ralph Playbook
 
+> [!IMPORTANT]
+> **This README documents the original v1 Ralph methodology (`PROMPT_plan.md` → `PROMPT_build.md` → `IMPLEMENTATION_PLAN.md`) from upstream `ClaytonFarr/ralph-playbook`.**
+>
+> **This fork (`dwrekofc/ralph-playbook`) has moved past that paradigm as of v0.6.** The v1 micro-plan cycle has been archived (`templates/_archive/v1/`). The current Ralph surface is:
+>
+> - **Standard build:** `/ralph-reqs` → `/ralph-spec` → `./loop.sh auto 3`
+> - **Fast path:** `/ralph-rapid-prototype` → `./loop.sh auto 3`
+> - **Cleanroom research:** `./cleanroom-loop.sh` → review `docs/cleanroom/research/` → standard or fast path
+> - **Locked evaluator:** in `auto` mode, the evaluator is always Codex (`gpt-5.5`, high reasoning), regardless of the build agent
+>
+> See **[`CLAUDE.md`](CLAUDE.md)** for the current architecture overview and **[`ROADMAP.md`](ROADMAP.md)** for the consolidation history. The original playbook below remains as upstream reference.
+
+---
+
 December 2025 boiled [Ralph's](https://ghuntley.com/ralph/) powerful yet dumb little face to the top of most AI-related timelines.
 
 I try to pay attention to the crazy-smart insights [@GeoffreyHuntley](https://x.com/GeoffreyHuntley) shares, but I can't say Ralph really clicked for me this summer. Now, all of the recent hubbub has made it hard to ignore.

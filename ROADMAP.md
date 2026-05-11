@@ -108,11 +108,11 @@ I also want this current working dir to have it's own .claude/ folder and a CLAU
 
 ---
 
-## JTBD 8: Multi-Harness Support (Codex Implemented)
+## JTBD 8: Multi-Harness Support ✅ Done
 **When** I want to run the Ralph loop with OpenAI Codex CLI instead of Claude, **I want** the loop and formatter to select a dedicated Codex harness, **so that** I can use Ralph's methodology without weakening the Claude-specific prompts.
 
 ### User Stories
-- As a developer, I want `loop.sh` and `v2-loop.sh` to accept `--agent=claude|codex|auto`.
+- As a developer, I want `loop.sh` to accept `--agent=claude|codex|auto`.
 - As a developer, I want Codex to use `harnesses/codex/PROMPT_*.md`, not root Claude prompts.
 - As a developer, I want Codex skills in `.agents/skills/` and Claude slash commands in `.claude/commands/`.
 - As a developer, I want per-agent JSON formatters so Claude and Codex streaming output both stay readable.
@@ -126,51 +126,51 @@ when I run the PROMPT_spec.md prompt I want it to only look for active reqs.md &
 
 ---
 
-# Ralph v2 Beta
+# v0.6 Consolidation (supersedes the v2 Beta section)
 
-Parallel evolution motivated by Anthropic's harness design findings: product-level planning beats micro-specs, separate evaluator agents improve quality, back-pressure keeps agents on track.
+v0.5 ran a parallel "v2 Beta" track to explore product-level planning, adversarial evaluation, and benchmarking. v0.6 collapses that experiment into the main surface and archives what wasn't load-bearing.
 
-## JTBD 10: v2 Product-Level Planning ⏳ Beta
+## JTBD 10: Product-Level Planning ✅ Done (v0.6)
 **When** I start a new project, **I want** to define product requirements and hard constraints in a single interactive session, **so that** the AI builds what I asked for without micro-detailed implementation plans.
 
-### User Stories
-- As a developer, I want `/ralph-v2-product` to walk me through a structured checklist (tech stack, DB, auth, deployment) and generate PRODUCT_SPEC.md + CONSTRAINTS.md.
-- As a developer, I want the product spec to contain features, user stories, success criteria, and eval rubrics — NOT implementation details.
-- As a developer, I want the agent to expand my input faithfully — no scope inflation, no bonus features.
+- `/ralph-rapid-prototype` (renamed from `/ralph-v2-product`) walks the user through stack/DB/auth/deploy and writes `PRODUCT_SPEC.md` + `CONSTRAINTS.md`.
+- Product spec captures features, user stories, success criteria, eval rubrics — no implementation details.
+- v0.6 collapses v1/v2 into one surface: `./loop.sh` (formerly `./v2-loop.sh`), no version prefix.
 
 ---
 
-## JTBD 11: Adversarial Evaluation System ⏳ Beta
+## JTBD 11: Adversarial Evaluation ✅ Done (v0.6, simplified)
 **When** the generator builds features, **I want** a separate evaluator agent to test and grade the implementation, **so that** I get honest quality assessment instead of self-praise.
 
-### User Stories
-- As a developer, I want 3 eval strategies I can benchmark: dedicated eval prompt, Codex cross-review, and file-based generator/evaluator handoff.
-- As a developer, I want `./v2-loop.sh auto N` to alternate between build and eval cycles with configurable pass thresholds.
-- As a developer, I want `./v2-loop.sh auto N --eval=codex` to use Codex (GPT-5.5, reasoning effort high) as the evaluator for true model separation.
-- As a developer, I want a ralph-v2-team skill that orchestrates generator + evaluator as Claude Code agent teammates.
+v0.6 simplification:
+- Single eval mechanism. No more `--eval=<strategy>` flag.
+- Evaluator is **always** Codex (`gpt-5.5`, `model_reasoning_effort=high`), independent of the build agent. No flag needed.
+- `./loop.sh auto N` alternates generate→eval with the locked Codex evaluator.
+- `ralph-v2-team` skill archived (Claude Code agent-teams orchestration not load-bearing).
+- `--eval=teams` and `--eval=codex` strategies removed.
+- `bench` mode and `benchmarks/` harness archived to `archive/benchmarks/` — comparison work is complete.
 
 ---
 
-## JTBD 12: Back-Pressure Scaffolding ⏳ Beta
+## JTBD 12: Back-Pressure Scaffolding ✅ Done
 **When** the loop runs, **I want** automated build/lint/test/typecheck checks after every feature, **so that** the agent catches and fixes issues immediately instead of accumulating tech debt.
 
-### User Stories
-- As a developer, I want back-pressure commands auto-generated per tech stack (JS: eslint+vitest+tsc, Rust: clippy+cargo test+cargo fmt, etc.).
-- As a developer, I want the generator to enforce TDD: write tests first (red), implement (green), refactor.
-- As a developer, I want the enhanced blank variant to infer tooling from CONSTRAINTS.md (supports C++, Python, Go, etc.).
+Per-stack back-pressure commands populated in `CONSTRAINTS.md` by `/ralph-rapid-prototype`. TDD enforcement in `PROMPT_generate.md`. Stack inference for JS/Rust/Python/Go/C++.
 
 ---
 
-## JTBD 13: Benchmark Suite ⏳ Beta
-**When** I want to compare eval strategies, **I want** a benchmark runner with test projects and a dashboard, **so that** I can determine which approach produces the best results.
+## JTBD 13: Cleanroom Research ✅ Done (v0.6)
+**When** I have an existing codebase or external reference repos and want to translate / reimplement, **I want** a research vehicle that produces reviewable behavior notes, **so that** I can verify behavior capture before any spec or build commits to a language.
 
-### User Stories
-- As a developer, I want 3 benchmark projects: JS recipe app, Rust CSV tool, C++ snake game.
-- As a developer, I want `./benchmarks/run-bench.sh all all 3` to run the full 3x3 matrix (9 runs).
-- As a developer, I want an HTML dashboard that shows pass rate, time, cost, and quality scores with charts.
-- As a developer, I want to track: cost, time, quality score, automated metrics, and bug discovery rate.
+- `./cleanroom-loop.sh` reads `src/*` and/or `refs/*`, writes neutral notes to `docs/cleanroom/research/` (README + per-source + BACKLOG).
+- Single mode (research). No build counterpart — after review, normal Ralph flow takes over.
+- Defaults to Codex (reading-heavy work, gpt-5.5 high reasoning).
+- Replaces the v1 `PROMPT_reverse.md` which jumped straight to writing specs.
 
 ---
 
-## JTBD 14: Agent Teams Skill ⏳ Beta
-**When** I want generator and evaluator running in parallel, **I want** a skill that uses Claude Code's native agent teams feature, **so that** I can compare parallel execution against sequential loop iteration.
+## Archived (no longer pursued)
+
+- **JTBD 5: Code Audit Loop** — Superseded by the v0.6 auto eval loop (generate→eval cycles with adversarial grading).
+- **JTBD 14: Agent Teams Skill** — `ralph-v2-team` archived. The locked-Codex evaluator covers the independent-grader use case.
+- **ralph-quickie** — 3-agent team (generator/evaluator/documentor) skill archived. Out of scope.
