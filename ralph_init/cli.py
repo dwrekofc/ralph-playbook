@@ -388,7 +388,7 @@ def copy_shared_files(dest: Path, overwrite: bool = True) -> set[str]:
     touched: set[str] = set()
 
     # Copy fixed files + all PROMPT_*.md files (auto-discovered)
-    fixed_files = ["loop.sh", "format-stream.sh", "format-codex-stream.sh"]
+    fixed_files = ["loop.sh", "cleanroom-loop.sh", "format-stream.sh", "format-codex-stream.sh"]
     prompt_files = sorted(f.name for f in shared.glob("PROMPT_*.md"))
     for name in fixed_files + prompt_files:
         src = shared / name
@@ -396,7 +396,7 @@ def copy_shared_files(dest: Path, overwrite: bool = True) -> set[str]:
             touched |= copy_file(src, dest / name, dest, overwrite)
 
     # Make scripts executable
-    for script in ("loop.sh", "format-stream.sh", "format-codex-stream.sh"):
+    for script in ("loop.sh", "cleanroom-loop.sh", "format-stream.sh", "format-codex-stream.sh"):
         chmod_if_exists(dest / script)
 
     # Copy Codex harness prompts
