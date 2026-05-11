@@ -3,19 +3,15 @@
 #
 # Usage:
 #   ./loop.sh [--agent=claude|codex|auto] generate [max]        Build from PRODUCT_SPEC.md / specs
-#   ./loop.sh eval [max]               Adversarial evaluation
+#   ./loop.sh eval [max]               Adversarial evaluation pass
 #   ./loop.sh rapid-prototype [max]    Generate product spec from CONSTRAINTS.md
 #   ./loop.sh auto [cycles]            Alternating generate→eval (default: 3 cycles)
-#   ./loop.sh bench [cycles]           Benchmark all eval strategies
-#   ./loop.sh help                     List available modes
+#   ./loop.sh help                     Show help
 #
-# Eval strategy flags (for auto/bench modes):
-#   --eval=prompt    Dedicated eval prompt (default)
-#   --eval=codex     Codex cross-review
-#   --eval=teams     File-based generator/evaluator handoff
-#   --eval=all       Run all strategies (benchmark mode)
+# Evaluator agent in `auto` mode is ALWAYS Codex (gpt-5.5, high reasoning),
+# regardless of the --agent flag. The build agent follows --agent.
 #
-# Requires: jq and the selected agent CLI
+# Requires: jq, the selected build-agent CLI, and codex (for auto mode's evaluator)
 
 set -euo pipefail
 
@@ -25,20 +21,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(pwd)"
 FORMAT_STREAM="${SCRIPT_DIR}/format-stream.sh"
 [ ! -f "$FORMAT_STREAM" ] && FORMAT_STREAM="./format-stream.sh"
+FORMAT_CODEX="${SCRIPT_DIR}/format-codex-stream.sh"
+[ ! -f "$FORMAT_CODEX" ] && FORMAT_CODEX="./format-codex-stream.sh"
 
 LOG_DIR="logs"
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-EVAL_STRATEGY="prompt"
 RETRY_ONLY="false"
 AGENT="claude"
 
-# Read config from .ralph.json (with v0.5.x .v2.* back-compat)
+# Read config from .ralph.json (with v0.5.x .v2.* back-compat for fail_threshold)
 FAIL_THRESHOLD=50
 if [ -f ".ralph.json" ] && command -v jq &>/dev/null; then
     _threshold=$(jq -r '.fail_threshold // .v2.fail_threshold // empty' .ralph.json 2>/dev/null)
     [ -n "$_threshold" ] && FAIL_THRESHOLD="$_threshold"
-    _eval=$(jq -r '.eval_strategy // .v2.eval_strategy // empty' .ralph.json 2>/dev/null)
-    [ -n "$_eval" ] && EVAL_STRATEGY="$_eval"
 fi
 
 # ─── Parse arguments ────────────────────────────────────────────────
@@ -47,11 +42,9 @@ MODE=""
 MAX_ITERATIONS=0
 CYCLES=3
 
-# Extract flags from any position
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
-        --eval=*) EVAL_STRATEGY="${arg#--eval=}" ;;
         --agent=*) AGENT="${arg#--agent=}" ;;
         *) ARGS+=("$arg") ;;
     esac
@@ -80,37 +73,28 @@ elif [ "$1" = "help" ]; then
     echo "loop.sh — Ralph loop runner"
     echo ""
     echo "Usage: ./loop.sh [--agent=claude|codex|auto] <mode> [max]"
-    echo "Agent: $AGENT"
+    echo "Agent: $AGENT  (note: auto mode's evaluator is always codex)"
     echo ""
     echo "Modes:"
     echo "  generate [max]          Build from PRODUCT_SPEC.md / specs (default)"
     echo "  eval [max]              Adversarial evaluation pass"
     echo "  rapid-prototype [max]   Generate product spec from CONSTRAINTS.md"
     echo "  auto [cycles]           Alternating generate→eval (default: 3 cycles)"
-    echo "  bench [cycles]          Benchmark all eval strategies"
     echo "  help                    Show this help"
-    echo ""
-    echo "Eval strategies (--eval=<strategy>):"
-    echo "  prompt            Dedicated eval prompt (default)"
-    echo "  codex             Codex cross-review via codex exec"
-    echo "  teams             File-based generator/evaluator handoff"
-    echo "  all               Run all strategies (benchmark)"
     echo ""
     echo "Examples:"
     echo "  ./loop.sh generate 5"
     echo "  ./loop.sh --agent=codex generate 5"
-    echo "  ./loop.sh auto 3 --eval=codex"
-    echo "  ./loop.sh bench 2"
+    echo "  ./loop.sh auto 3"
     echo ""
     echo "Config (.ralph.json top level):"
-    echo "  eval_strategy     Default eval strategy"
-    echo "  fail_threshold    Pass rate threshold (default: 50)"
+    echo "  fail_threshold    Pass rate threshold for retry-vs-rebuild (default: 50)"
     exit 0
 else
     MODE="$1"
     shift
     if [ $# -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
-        if [ "$MODE" = "auto" ] || [ "$MODE" = "bench" ]; then
+        if [ "$MODE" = "auto" ]; then
             CYCLES="$1"
         else
             MAX_ITERATIONS="$1"
@@ -123,30 +107,35 @@ mkdir -p "$LOG_DIR"
 
 # ─── Helpers ────────────────────────────────────────────────────────
 
+# run_prompt <prompt_file> <iteration> [env_vars] [agent_override]
+#
+# agent_override (4th arg) lets callers force a specific agent for this
+# invocation regardless of the global $AGENT. Used by auto mode to lock
+# the evaluator to codex.
 run_prompt() {
     local prompt_file="$1"
     local iteration="$2"
     local env_vars="${3:-}"
+    local agent="${4:-$AGENT}"
 
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
-    local log_file="${LOG_DIR}/v2_${AGENT}_${MODE}_${iteration}_${timestamp}.jsonl"
+    local log_file="${LOG_DIR}/${agent}_${MODE}_${iteration}_${timestamp}.jsonl"
 
-    echo -e "\n--- v2 iteration $iteration started at $(date) ---"
+    echo -e "\n--- iteration $iteration started at $(date) ($agent) ---"
     echo "Prompt: $prompt_file"
     echo "Log: $log_file"
 
     local prompt_content
     prompt_content=$(cat "$prompt_file")
 
-    # Prepend env vars as context if provided
     if [ -n "$env_vars" ]; then
         prompt_content="${env_vars}
 
 ${prompt_content}"
     fi
 
-    # Auto-inject concatenated specs/* as context for generate/eval modes
+    # Auto-inject concatenated specs/* as context for generate/eval/auto modes
     local specs_context=""
     if [[ "$MODE" == "generate" || "$MODE" == "auto" || "$MODE" == "eval" ]]; then
         if [ -d "specs" ] && ls specs/*.md &>/dev/null; then
@@ -168,10 +157,8 @@ ${prompt_content}"
         fi
     fi
 
-    if [ "$AGENT" = "codex" ]; then
-        local codex_format="${SCRIPT_DIR}/format-codex-stream.sh"
-        [ ! -f "$codex_format" ] && codex_format="./format-codex-stream.sh"
-        if [ ! -x "$codex_format" ]; then
+    if [ "$agent" = "codex" ]; then
+        if [ ! -x "$FORMAT_CODEX" ]; then
             echo "Error: format-codex-stream.sh not found or not executable."
             exit 1
         fi
@@ -182,7 +169,7 @@ ${prompt_content}"
             --dangerously-bypass-approvals-and-sandbox \
             - \
             | tee "$log_file" \
-            | "$codex_format"
+            | "$FORMAT_CODEX"
     else
         echo "$prompt_content" | claude -p \
             --dangerously-skip-permissions \
@@ -193,19 +180,15 @@ ${prompt_content}"
             | "$FORMAT_STREAM"
     fi
 
-    echo -e "\n--- v2 iteration $iteration finished at $(date) ---"
+    echo -e "\n--- iteration $iteration finished at $(date) ---"
 
-    # Push changes
     git push origin "$CURRENT_BRANCH" 2>/dev/null || \
         git push -u origin "$CURRENT_BRANCH" 2>/dev/null || \
         echo "  (git push skipped — no remote or not a git repo)"
 }
 
 get_pass_rate() {
-    # Parse pass_rate from EVAL_REPORT.md.
-    # Portable across BSD (macOS) and GNU grep — `grep -oP` is GNU-only and
-    # silently errored on macOS, returning 0 and triggering bogus full-rebuild
-    # cycles. Use sed to extract the integer instead.
+    # Parse pass_rate from EVAL_REPORT.md (macOS-portable; sed instead of GNU grep -oP).
     if [ -f "EVAL_REPORT.md" ]; then
         local rate
         rate=$(sed -nE 's/^[[:space:]]*pass_rate:[[:space:]]*([0-9]+).*/\1/p' EVAL_REPORT.md 2>/dev/null | head -1)
@@ -217,7 +200,8 @@ get_pass_rate() {
 
 resolve_prompt() {
     local name="$1"
-    if [ "$AGENT" = "codex" ]; then
+    local agent="${2:-$AGENT}"
+    if [ "$agent" = "codex" ]; then
         if [ -f "harnesses/codex/PROMPT_${name}.md" ]; then
             echo "harnesses/codex/PROMPT_${name}.md"
         elif [ -f "${SCRIPT_DIR}/harnesses/codex/PROMPT_${name}.md" ]; then
@@ -234,64 +218,7 @@ resolve_prompt() {
     fi
 }
 
-run_eval_codex() {
-    local iteration="$1"
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
-    local log_file="${LOG_DIR}/v2_eval_codex_${iteration}_${timestamp}.jsonl"
-
-    echo -e "\n--- v2 codex eval $iteration started at $(date) ---"
-    echo "Log: $log_file"
-
-    # codex-review.sh was removed; always use the fallback (eval prompt + codex env var)
-    if false; then
-        :
-    else
-        # Run eval prompt with codex instruction prepended
-        local eval_prompt
-        eval_prompt=$(resolve_prompt "eval")
-        if [ -n "$eval_prompt" ]; then
-            run_prompt "$eval_prompt" "$iteration" "EVAL_MODE=codex
-You are performing a Codex-style cross-review. Focus on code quality, architecture, and correctness."
-        else
-            echo "Error: No eval prompt found and no codex review script."
-        fi
-    fi
-
-    echo -e "\n--- v2 codex eval $iteration finished at $(date) ---"
-}
-
-run_eval_teams() {
-    local iteration="$1"
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
-    local log_file="${LOG_DIR}/v2_eval_teams_${iteration}_${timestamp}.jsonl"
-
-    echo -e "\n--- v2 teams eval $iteration started at $(date) ---"
-    echo "Log: $log_file"
-
-    # File-based teams: run generate then eval sequentially with handoff files
-    local gen_prompt
-    gen_prompt=$(resolve_prompt "generate")
-    local eval_prompt
-    eval_prompt=$(resolve_prompt "eval")
-
-    if [ -n "$gen_prompt" ] && [ -n "$eval_prompt" ]; then
-        # Generator writes HANDOFF.md
-        run_prompt "$gen_prompt" "${iteration}_gen" "TEAMS_MODE=true
-After completing your work, write a HANDOFF.md file summarizing what you built and what to test."
-
-        # Evaluator reads HANDOFF.md
-        run_prompt "$eval_prompt" "${iteration}_eval" "TEAMS_MODE=true
-Read HANDOFF.md for context on what was just built before beginning evaluation."
-    else
-        echo "Error: Missing generate or eval prompt for teams mode."
-    fi
-
-    echo -e "\n--- v2 teams eval $iteration finished at $(date) ---"
-}
-
-# ─── Mode: single prompt ───────────────────────────────────────────
+# ─── Mode: single prompt (generate / eval / rapid-prototype) ────────
 
 run_single_mode() {
     local prompt_file
@@ -326,28 +253,38 @@ run_single_mode() {
 
         run_prompt "$prompt_file" "$iteration"
         iteration=$((iteration + 1))
-        echo -e "\n======================== V2 LOOP $iteration ========================\n"
+        echo -e "\n======================== LOOP $iteration ========================\n"
     done
 }
 
-# ─── Mode: auto (alternating generate→eval) ────────────────────────
+# ─── Mode: auto (alternating generate→eval, codex-locked evaluator) ─
 
 run_auto_mode() {
     local gen_prompt
     gen_prompt=$(resolve_prompt "generate")
     local eval_prompt
-    eval_prompt=$(resolve_prompt "eval")
+    # Evaluator is always codex — resolve from harnesses/codex/ regardless of build agent.
+    eval_prompt=$(resolve_prompt "eval" "codex")
 
     if [ -z "$gen_prompt" ]; then
         echo "Error: PROMPT_generate.md not found"
         exit 1
     fi
+    if [ -z "$eval_prompt" ]; then
+        echo "Error: harnesses/codex/PROMPT_eval.md not found (required for auto mode)"
+        exit 1
+    fi
+    if ! command -v codex &>/dev/null; then
+        echo "Error: codex CLI is required for auto mode (evaluator is always codex)."
+        echo "Install codex, then retry."
+        exit 1
+    fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Ralph — Auto Mode"
-    echo "Agent:        $AGENT"
+    echo "Build agent:  $AGENT"
+    echo "Evaluator:    codex (locked, gpt-5.5, high reasoning)"
     echo "Cycles:       $CYCLES (generate→eval)"
-    echo "Eval:         $EVAL_STRATEGY"
     echo "Threshold:    ${FAIL_THRESHOLD}%"
     echo "Branch:       $CURRENT_BRANCH"
     echo "Logs:         $LOG_DIR/"
@@ -358,8 +295,8 @@ run_auto_mode() {
         echo "║  CYCLE $cycle / $CYCLES"
         echo "╚══════════════════════════════════════╝"
 
-        # ── Generate ──
-        echo -e "\n▶ GENERATE (cycle $cycle)"
+        # ── Generate (uses --agent= choice) ──
+        echo -e "\n▶ GENERATE (cycle $cycle, agent: $AGENT)"
         local env_vars=""
         if [ "$RETRY_ONLY" = "true" ]; then
             env_vars="RETRY_ONLY=true
@@ -367,41 +304,9 @@ Only fix features that FAILED in EVAL_REPORT.md. Do not touch passing features."
         fi
         run_prompt "$gen_prompt" "c${cycle}_gen" "$env_vars"
 
-        # ── Evaluate ──
-        echo -e "\n▶ EVALUATE (cycle $cycle) — strategy: $EVAL_STRATEGY"
-        case "$EVAL_STRATEGY" in
-            prompt)
-                if [ -n "$eval_prompt" ]; then
-                    run_prompt "$eval_prompt" "c${cycle}_eval"
-                else
-                    echo "Warning: No eval prompt found, skipping evaluation."
-                fi
-                ;;
-            codex)
-                run_eval_codex "c${cycle}"
-                ;;
-            teams)
-                run_eval_teams "c${cycle}"
-                ;;
-            all)
-                echo "  Running all 3 eval strategies..."
-                if [ -n "$eval_prompt" ]; then
-                    cp EVAL_REPORT.md EVAL_REPORT_pre.md 2>/dev/null || true
-                    run_prompt "$eval_prompt" "c${cycle}_eval_prompt"
-                    cp EVAL_REPORT.md EVAL_REPORT_prompt.md 2>/dev/null || true
-                fi
-                run_eval_codex "c${cycle}"
-                cp EVAL_REPORT.md EVAL_REPORT_codex.md 2>/dev/null || true
-                # Restore pre-eval state for teams
-                cp EVAL_REPORT_pre.md EVAL_REPORT.md 2>/dev/null || true
-                run_eval_teams "c${cycle}"
-                cp EVAL_REPORT.md EVAL_REPORT_teams.md 2>/dev/null || true
-                ;;
-            *)
-                echo "Error: Unknown eval strategy '$EVAL_STRATEGY'"
-                exit 1
-                ;;
-        esac
+        # ── Evaluate (always codex) ──
+        echo -e "\n▶ EVALUATE (cycle $cycle, agent: codex)"
+        run_prompt "$eval_prompt" "c${cycle}_eval" "" "codex"
 
         # ── Threshold check ──
         local pass_rate
@@ -409,7 +314,7 @@ Only fix features that FAILED in EVAL_REPORT.md. Do not touch passing features."
         echo -e "\n  Pass rate: ${pass_rate}% (threshold: ${FAIL_THRESHOLD}%)"
 
         if [ "$pass_rate" -ge 100 ]; then
-            echo "  All features passing! Stopping early."
+            echo "  All features passing. Stopping early."
             break
         elif [ "$pass_rate" -ge "$FAIL_THRESHOLD" ]; then
             echo "  Above threshold — next cycle retries failed features only."
@@ -423,91 +328,6 @@ Only fix features that FAILED in EVAL_REPORT.md. Do not touch passing features."
     echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Auto mode complete: $CYCLES cycles"
     echo "Final pass rate: $(get_pass_rate)%"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-}
-
-# ─── Mode: bench (benchmark all strategies) ─────────────────────────
-
-run_bench_mode() {
-    local strategies=("prompt" "codex" "teams")
-    local results_dir="benchmarks/results"
-    mkdir -p "$results_dir"
-
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
-    local project_name
-    project_name=$(basename "$(pwd)")
-
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Ralph — Benchmark Mode"
-    echo "Project:      $project_name"
-    echo "Strategies:   ${strategies[*]}"
-    echo "Cycles each:  $CYCLES"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    for strategy in "${strategies[@]}"; do
-        echo -e "\n╔══════════════════════════════════════╗"
-        echo "║  BENCHMARK: $strategy"
-        echo "╚══════════════════════════════════════╝"
-
-        local start_time
-        start_time=$(date +%s)
-
-        # Reset eval report
-        rm -f EVAL_REPORT.md
-
-        # Run auto mode with this strategy
-        EVAL_STRATEGY="$strategy"
-        RETRY_ONLY="false"
-        run_auto_mode
-
-        local end_time
-        end_time=$(date +%s)
-        local duration=$((end_time - start_time))
-        local pass_rate
-        pass_rate=$(get_pass_rate)
-        local iteration_count
-        iteration_count=$(ls -1 "${LOG_DIR}"/v2_*_c*_*.jsonl 2>/dev/null | wc -l | tr -d ' ')
-        local loc
-        loc=$(find src -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \
-              -o -name "*.rs" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" \
-              2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}' || echo "0")
-        local test_count
-        test_count=$(grep -r "test\|it(" src/ tests/ test/ 2>/dev/null | wc -l | tr -d ' ' || echo "0")
-
-        # Write JSON result
-        local result_file="${results_dir}/${project_name}_${strategy}_${timestamp}.json"
-        cat > "$result_file" <<EOF
-{
-  "project": "$project_name",
-  "strategy": "$strategy",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "duration_seconds": $duration,
-  "iterations": $iteration_count,
-  "pass_rate": $pass_rate,
-  "loc": $loc,
-  "test_count": $test_count,
-  "test_coverage_pct": null,
-  "user_score": null,
-  "cost_usd": null,
-  "bugs_eval_found": null,
-  "bugs_user_found": null
-}
-EOF
-        echo "  Result saved: $result_file"
-
-        # Save strategy-specific eval report
-        cp EVAL_REPORT.md "EVAL_REPORT_${strategy}.md" 2>/dev/null || true
-    done
-
-    echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Benchmark complete!"
-    echo "Results in: $results_dir/"
-    echo ""
-    echo "Review each result and fill in:"
-    echo "  - user_score (1-10)"
-    echo "  - cost_usd (from Anthropic dashboard)"
-    echo "  - bugs_user_found (bugs you find that eval missed)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
@@ -533,9 +353,6 @@ fi
 case "$MODE" in
     auto)
         run_auto_mode
-        ;;
-    bench)
-        run_bench_mode
         ;;
     generate|eval|rapid-prototype)
         run_single_mode
