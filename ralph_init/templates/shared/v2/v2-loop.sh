@@ -202,11 +202,14 @@ ${prompt_content}"
 }
 
 get_pass_rate() {
-    # Parse pass_rate from EVAL_REPORT.md
+    # Parse pass_rate from EVAL_REPORT.md.
+    # Portable across BSD (macOS) and GNU grep — `grep -oP` is GNU-only and
+    # silently errored on macOS, returning 0 and triggering bogus full-rebuild
+    # cycles. Use sed to extract the integer instead.
     if [ -f "EVAL_REPORT.md" ]; then
         local rate
-        rate=$(grep -oP 'pass_rate:\s*\K[0-9]+' EVAL_REPORT.md 2>/dev/null || echo "0")
-        echo "$rate"
+        rate=$(sed -nE 's/^[[:space:]]*pass_rate:[[:space:]]*([0-9]+).*/\1/p' EVAL_REPORT.md 2>/dev/null | head -1)
+        echo "${rate:-0}"
     else
         echo "0"
     fi
