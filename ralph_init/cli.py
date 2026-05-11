@@ -385,7 +385,7 @@ def copy_shared_files(dest: Path, overwrite: bool = True) -> set[str]:
     touched: set[str] = set()
 
     # Copy fixed files + all PROMPT_*.md files (auto-discovered)
-    fixed_files = ["loop.sh", "format-stream.sh", "format-codex-stream.sh", "IMPLEMENTATION_PLAN.md"]
+    fixed_files = ["loop.sh", "format-stream.sh", "format-codex-stream.sh"]
     prompt_files = sorted(f.name for f in shared.glob("PROMPT_*.md"))
     for name in fixed_files + prompt_files:
         src = shared / name
@@ -985,16 +985,14 @@ def cmd_discover(args: list[str]) -> None:
     print(f"\nDone! Registered {updated}/{len(found)} projects. {failed} failed.")
 
 
-GLOBAL_COMMANDS = ["ralph-manage.md", "ralph-v2-team.md"]
-GLOBAL_SKILLS = ["ralph-quickie", "ralph-this"]
+GLOBAL_COMMANDS = ["ralph-manage.md"]
+GLOBAL_SKILLS = ["ralph-this"]
 GLOBAL_CODEX_SKILLS = [
     "ralph-manage",
     "ralph-new-prompt",
     "ralph-reqs",
     "ralph-spec",
     "ralph-v2-product",
-    "ralph-v2-team",
-    "ralph-quickie",
     "ralph-this",
 ]
 
