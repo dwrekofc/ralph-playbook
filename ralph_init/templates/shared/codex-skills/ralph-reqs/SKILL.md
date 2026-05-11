@@ -133,7 +133,7 @@ The document can be as detailed or high-level as the user wants. Facilitate but 
 
 ### roadmap-XXX.md — The Horizon (write when items are DEFERRED)
 
-This captures ideas and features the user wants to build eventually but NOT now. It is deliberately lightweight — enough context to revisit later, not enough to build from. **This file is ONLY used during requirements gathering. It is NOT read by `$ralph-spec`, `PROMPT_spec.md`, `harnesses/codex/PROMPT_plan.md`, or `harnesses/codex/PROMPT_build.md`.**
+This captures ideas and features the user wants to build eventually but NOT now. It is deliberately lightweight — enough context to revisit later, not enough to build from. **This file is ONLY used during requirements gathering. It is NOT read by `$ralph-spec`, `harnesses/codex/PROMPT_generate.md`, `harnesses/codex/PROMPT_eval.md`, or `harnesses/codex/PROMPT_rapid_prototype.md`.**
 
 Do NOT create this file at session start. Create it only when the first item is deferred to the roadmap.
 
@@ -304,41 +304,30 @@ If a `roadmap-XXX.md` file was created during this session:
    _Future phases and deferred items are tracked in `.planning/roadmap-XXX.md`. These are NOT requirements — they are placeholders for future exploration._
    ```
 
-### Step 5: Update harnesses/codex/PROMPT_plan.md — Set the Ultimate Goal
+### Step 5: (Optional) Tailor harnesses/codex/PROMPT_generate.md for project specifics
 
-Read the project's `harnesses/codex/PROMPT_plan.md` and find the `ULTIMATE GOAL:` line. It will contain a placeholder like `[project-specific goal]`. Replace it with a concise, clear statement of the project's goal derived from the finalized requirements.
+If the finalized requirements contain rules the build loop needs every iteration — non-standard source layout, reference-handling conventions, project-specific git practices, mandatory style constraints — tailor `harnesses/codex/PROMPT_generate.md` to capture them.
 
-For example, if the reqs define a recipe sharing app with social features:
-```
-ULTIMATE GOAL: We want to achieve a recipe sharing app where users can create, discover, and share recipes with social features including collections and comments. Consider missing elements...
-```
+Project-specific concerns that often warrant tailoring:
 
-The goal should be 1-2 sentences that capture the essence of what the user wants to build. The rest of the ULTIMATE GOAL line (about missing elements, specs, and implementation plan) stays as-is.
+- **Source code location** — If the project uses a non-standard structure (e.g., `crates/*` + `apps/*` for Rust workspaces, `packages/*` for monorepos), call it out so the build agent doesn't search the wrong tree.
+- **Reference files** — If the project uses `refs/` or `.refs/`, document the adoption disposition (Reuse / Fork / Rewrite) the agent should apply when consulting them.
+- **Acceptance criteria** — If specs include cross-cutting acceptance checklists, add a step to verify against them before marking work complete.
+- **Build/test specifics** — Anything beyond what's in `AGENTS.md` / `CONSTRAINTS.md`.
+- **Git workflow** — Specific staging rules, tagging conventions, branch policies.
+- **Project-specific constraints** — Repeating rules like "keep components under 200 lines" or "always use design system tokens."
 
-### Step 6: Tailor harnesses/codex/PROMPT_build.md — Project-Specific Build Instructions
+Use `request_user_input` to confirm the tailored prompt with the user before writing. Show them the proposed changes. If the requirements don't introduce anything project-specific beyond what `CONSTRAINTS.md` already captures, skip this step.
 
-Read the project's `harnesses/codex/PROMPT_build.md` and tailor it to reflect the specific project. The default template is generic — it references `src/*` and has no project-specific context. Based on the finalized requirements, update it to include project-specific details such as:
-
-- **Source code location** — If the project uses a different structure (e.g., `crates/*` and `apps/*` for Rust, or a monorepo with `packages/*`), update the references in lines 0a-0c.
-- **Reference files** — If the project uses `.refs/` for reference implementations, add instructions about reading them and adoption dispositions (Reuse/Fork/Rewrite).
-- **Acceptance criteria** — If specs include acceptance criteria or a cross-cutting checklist, add a step to verify against them before marking complete.
-- **Build/test specifics** — If the tech stack has specific build, test, or lint commands beyond what's in AGENTS.md, reference them.
-- **Git workflow** — If the user decided on specific git practices (e.g., staging specific files vs `git add -A`, tagging conventions), update the commit step.
-- **Project-specific constraints** — Any rules from the reqs that the build loop needs to follow every iteration (e.g., "keep components under 200 lines", "always use the design system tokens").
-
-Use `request_user_input` to confirm the tailored build prompt with the user before writing it. Show them the key changes you're proposing.
-
-**Reference:** See a well-tailored build prompt at work in the gpui-workbench project — it includes adoption dispositions for `.refs/`, acceptance criteria verification, specific git staging, and spec inconsistency handling. Your tailored prompt should be similarly specific to this project's needs.
-
-### Step 7: Summarize and Suggest Next Steps
+### Step 6: Summarize and Suggest Next Steps
 
 Present a summary of the finalized requirements:
 - Number of JTBDs captured
 - Key architecture and tech decisions
 - Any open questions that remain
 - Deferred items captured in the roadmap (if any)
-- What was updated: reqs doc, archived decisions log, roadmap (if any), harnesses/codex/PROMPT_plan.md goal, harnesses/codex/PROMPT_build.md tailoring
-- Suggest: "When you're ready, `$ralph-spec` will convert these requirements into Ralph specs for the build loop."
+- What was updated: reqs doc, archived decisions log, roadmap (if any), and harnesses/codex/PROMPT_generate.md tailoring (if Step 5 applied)
+- Suggest: "When you're ready, `$ralph-spec` will convert these requirements into specs, then `./loop.sh --agent=codex auto 3` builds and evaluates."
 
 ---
 
@@ -350,8 +339,7 @@ The `.planning/` directory is where all pre-spec ideation lives. It feeds into t
 - JTBD entries in reqs-XXX.md map to Ralph specs (one JTBD topic of concern = one spec file)
 - The finalized reqs doc is the **single authoritative source** — `$ralph-spec` reads it, not the archived decisions log
 - The archived decisions log in `.planning/archive/` exists for provenance and historical reference only
-- `harnesses/codex/PROMPT_plan.md` uses the ultimate goal set during finalization to guide planning
-- `harnesses/codex/PROMPT_build.md` uses project-specific instructions set during finalization to guide building
+- `harnesses/codex/PROMPT_generate.md` reads `specs/*` (auto-concatenated by `loop.sh`) and follows any project-specific tailoring added in Step 5
 
 `.planning/` is intentionally separate from `specs/` — specs are the source of truth for Ralph's loops, while `.planning/` captures the ideation and requirements that produced them.
 

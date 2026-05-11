@@ -39,7 +39,7 @@ Examine the current directory to determine the situation:
 
 1. **Check for `.ralph.json`** — If it exists, this is an existing Ralph project. Read it to get the variant and version.
 2. **Check for existing code** — Look for `package.json`, `Cargo.toml`, `src/`, `crates/`, `apps/`, or other indicators of an existing codebase.
-3. **Check for `PROMPT_build.md` or `loop.sh`** — Indicates Ralph files are already present (may be a pre-0.4.0 project without .ralph.json).
+3. **Check for `loop.sh` or `PROMPT_generate.md`** — Indicates Ralph files are already present (may be a pre-0.4.0 project without .ralph.json).
 4. **Check if directory is empty or near-empty** — Only has `.git/`, README, LICENSE, etc.
 
 Based on this detection, determine the mode:
@@ -81,8 +81,7 @@ If the user passed an explicit argument (`init` or `update`), use that mode rega
 5. After success, explain next steps:
    - `$ralph-reqs` → brainstorm requirements
    - `$ralph-spec` → convert to specs
-   - `./loop.sh --agent=codex plan` → generate implementation plan
-   - `./loop.sh --agent=codex` → start building
+   - `./loop.sh --agent=codex auto 3` → build + evaluate cycles (or `$ralph-rapid-prototype` → `./loop.sh --agent=codex auto 3` for the fast path)
 
 ### Brownfield Init Flow
 
@@ -94,11 +93,11 @@ If the user passed an explicit argument (`init` or `update`), use that mode rega
 
 4. Run `ralph init <variant>` with assembled flags.
 
-5. After success, highlight the reverse-engineering option:
-   - "This project has existing code. You can reverse-engineer specs from it:"
-   - `./loop.sh --agent=codex reverse` — traces your code and produces implementation-free specs
-   - Use `request_user_input`: "Want me to start reverse-engineering specs now?"
-   - If yes, explain what `./loop.sh --agent=codex reverse` does and offer to run it (note: it runs headlessly and may take a while)
+5. After success, highlight the cleanroom research option:
+   - "This project has existing code. You can produce neutral behavior notes for review before specs/build:"
+   - `./cleanroom-loop.sh` — reads `src/*` and/or `refs/*`, writes notes to `docs/cleanroom/research/`
+   - Use `request_user_input`: "Want me to start cleanroom research now?"
+   - If yes, explain that it runs headlessly with codex (gpt-5.5, high reasoning) and may take a while. Notes are reviewable artifacts — after they exist, run `$ralph-reqs` → `$ralph-spec` → `./loop.sh --agent=codex auto`.
 
 ### Update Flow
 
@@ -135,4 +134,4 @@ If the user passed an explicit argument (`init` or `update`), use that mode rega
 - **Always use `request_user_input`** for decisions. Never assume the user wants a specific variant or flag.
 - **Execute commands via Bash**, not by calling Python functions directly.
 - **Check exit codes** after running commands. If a command fails, read the error output and help the user resolve it.
-- **Don't run `./loop.sh --agent=codex reverse` without asking** — it's a long-running headless process. Always confirm first.
+- **Don't run `./cleanroom-loop.sh` or `./loop.sh auto` without asking** — these are long-running headless processes. Always confirm first.

@@ -21,8 +21,9 @@ Tell the user which context you detected and where the new prompt file will be c
 
 Read these files to understand Ralph's prompt conventions (adjust paths based on context detected above):
 
-- `PROMPT_plan.md` — A read-only loop prompt (studies code, generates a plan, does NOT modify code)
-- `PROMPT_build.md` — A read-write loop prompt (implements code, runs tests, commits)
+- `PROMPT_cleanroom.md` — A read-only research loop prompt (reads sources, writes neutral notes, does NOT modify project source)
+- `PROMPT_generate.md` — A read-write build loop prompt (implements features from specs, runs back-pressure, commits)
+- `PROMPT_eval.md` — An adversarial evaluation prompt (read-only grading, produces `EVAL_REPORT.md`)
 
 Study their structure carefully. These are your reference examples.
 
@@ -59,11 +60,15 @@ Ask: "What files/directories should the agent study before starting each iterati
 
 Common choices:
 - `specs/*` — application specifications
-- `IMPLEMENTATION_PLAN.md` — current plan and status
+- `PRODUCT_SPEC.md` / `CONSTRAINTS.md` / `EVAL_CRITERIA.md` — fast-path spec + tech stack + scoring rubric
+- `EVAL_REPORT.md` — most recent grade (if doing fix cycles)
+- `PROGRESS.md` — completed / remaining feature tracker
+- `docs/cleanroom/research/*` — neutral behavior notes (if cleanroom research has run)
 - `src/*` or `crates/*` — source code
 - `src/lib/*` — shared utilities
 - `docs/*` — existing documentation
 - `tests/*` — existing test files
+- `refs/*` — external reference repositories (only read in cleanroom research)
 - Other project-specific directories
 
 ### 3d. Core Task
@@ -75,15 +80,15 @@ Ask: "Describe the core task the agent should perform each iteration. Be specifi
 Ask: "Does this mode modify files in the project? (This determines whether guardrails and git commit steps are needed.)"
 
 Options:
-- **Yes, it modifies/creates files** — Will include guardrails section and git commit step (like `PROMPT_build.md`)
-- **No, it's read-only analysis** — Will skip guardrails and commit steps (like `PROMPT_plan.md`)
+- **Yes, it modifies/creates files** — Will include guardrails section and git commit step (like `PROMPT_generate.md`)
+- **No, it's read-only analysis** — Will skip guardrails and commit steps (like `PROMPT_eval.md` or `PROMPT_cleanroom.md`)
 
 ### 3f. Exit Conditions
 
 Ask: "What should the agent do at the end of each iteration to signal completion?"
 
 Common patterns:
-- Update `IMPLEMENTATION_PLAN.md` with findings
+- Update `PROGRESS.md` with completed/remaining work
 - Commit changes with a descriptive message and push
 - Write findings to a log file (e.g., `AUDIT_LOG.md`)
 - Update a tracking document
@@ -113,17 +118,18 @@ Guardrails — Standing Orders (only for file-modifying prompts)
   Numbered with escalating 9s: 99999, 999999, 9999999, etc.
   These are rules that apply EVERY iteration regardless of the specific task.
   Higher number = more critical rule.
-  Examples from PROMPT_build.md:
-  - Keep IMPLEMENTATION_PLAN.md current
+  Examples from PROMPT_generate.md:
+  - Update PROGRESS.md after each feature
   - Update AGENTS.md when learning new commands
   - Implement completely, no placeholders
+  - Run all back-pressure (build/test/lint) before committing
   - Keep AGENTS.md operational only (no status updates)
 ```
 
 **Additional conventions:**
 - **First line must be a description comment:** `<!-- description: One-line summary of what this mode does -->` — This is displayed by `./loop.sh help` alongside the mode name. Keep it under 60 characters.
 - Use `[square-bracket placeholders]` for values that should be customized per-project (e.g., `[project-specific goal]`)
-- Reference `@IMPLEMENTATION_PLAN.md` and `@AGENTS.md` with `@` prefix when they should be loaded as context
+- Reference `@AGENTS.md`, `@CONSTRAINTS.md`, `@PRODUCT_SPEC.md` with `@` prefix when they should be loaded as context
 - Specify subagent counts and tiers: "up to 500 Sonnet subagents for searches/reads", "1 Opus subagent for complex reasoning"
 - Keep prompts concise — the agent reads this every iteration, so density matters
 

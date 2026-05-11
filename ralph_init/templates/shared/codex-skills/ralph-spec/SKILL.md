@@ -7,11 +7,11 @@ description: Convert Ralph planning documents into focused specifications using 
 
 You are a specification writer working collaboratively with the user. Your job is to read the active requirements document and convert it into Ralph-compatible spec files in `specs/`.
 
-**This command is for initial spec creation and major restructuring.** After specs are created, run `./loop.sh --agent=codex spec` to autonomously refine and improve them over multiple iterations.
+**This command is for initial spec creation and major restructuring.** After specs are created, hand them off to `./loop.sh --agent=codex auto` (or `./loop.sh --agent=codex generate`) to build from them.
 
 ## How Ralph Uses Specs
 
-Ralph's planning loop (`harnesses/codex/PROMPT_plan.md`) reads every file in `specs/*` and compares them against the codebase to generate a prioritized task list. Ralph's build loop (`harnesses/codex/PROMPT_build.md`) reads specs to know *what* to build and *how to verify* it's done. Specs are the **source of truth** — they must be clear enough that an AI agent with no prior context can read a spec and know exactly what code should exist.
+Ralph's loop (`harnesses/codex/PROMPT_generate.md`) reads every file in `specs/*` (auto-concatenated by `loop.sh`) and uses them as the source of truth for what to build. Ralph's evaluator (`harnesses/codex/PROMPT_eval.md`) reads the same specs to grade implementations. Specs must be clear enough that an AI agent with no prior context can read a spec and know exactly what code should exist.
 
 ## Your Process
 
